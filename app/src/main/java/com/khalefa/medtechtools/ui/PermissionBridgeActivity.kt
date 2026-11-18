@@ -2,6 +2,7 @@ package com.khalefa.medtechtools.ui
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -15,7 +16,6 @@ import android.widget.Toast
 import com.khalefa.medtechtools.R
 import com.khalefa.medtechtools.prefs.PrefsManager
 import com.khalefa.medtechtools.service.FloatingBubbleService
-import com.khalefa.medtechtools.service.MedTechAccessibilityService
 
 class PermissionBridgeActivity : Activity() {
 
@@ -23,6 +23,7 @@ class PermissionBridgeActivity : Activity() {
         private const val REQ_MEDIA_PROJECTION = 1001
         private const val REQ_OVERLAY = 1002
         private const val REQ_NOTIFICATIONS = 1003
+        private const val REQ_APP_INFO = 1004
         const val EXTRA_PENDING_ACTION = "pending_action"
     }
 
@@ -40,27 +41,48 @@ class PermissionBridgeActivity : Activity() {
         }
 
         if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, getString(R.string.grant_overlay), Toast.LENGTH_LONG).show()
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            @Suppress("DEPRECATION")
-            startActivityForResult(intent, REQ_OVERLAY)
+            showOverlayPermissionDialog()
             return
         }
 
-        checkNotificationPermissionAndStart()
+        checkNotificationPermissionAndCapture()
     }
 
-    private fun checkNotificationPermissionAndStart() {
+    private fun showOverlayPermissionDialog() {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.restricted_title))
+            .setMessage(getString(R.string.restricted_body))
+            .setCancelable(false)
+            .setPositiveButton(getString(R.string.grant_overlay)) { _, _ ->
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                @Suppress("DEPRECATION")
+                startActivityForResult(intent, REQ_OVERLAY)
+            }
+            .setNeutralButton(getString(R.string.open_app_info)) { _, _ ->
+                val infoIntent = Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:$packageName")
+                )
+                @Suppress("DEPRECATION")
+                startActivityForResult(infoIntent, REQ_APP_INFO)
+            }
+            .setNegativeButton(getString(R.string.exit_app)) { _, _ ->
+                finish()
+            }
+            .show()
+    }
+
+    private fun checkNotificationPermissionAndCapture() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFICATIONS)
                 return
             }
         }
-        startOrRequestProjection()
+        requestScreenCaptureOnce()
     }
 
     override fun onRequestPermissionsResult(
@@ -70,26 +92,12 @@ class PermissionBridgeActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_NOTIFICATIONS) {
-            startOrRequestProjection()
+            requestScreenCaptureOnce()
         }
     }
 
-    private fun startOrRequestProjection() {
-        // On Android 11+, if Accessibility Screenshot Service is enabled, no MediaProjection dialog is needed!
-        if (MedTechAccessibilityService.isAvailable()) {
-            val serviceIntent = Intent(this, FloatingBubbleService::class.java).apply {
-                pendingAction?.let { putExtra(EXTRA_PENDING_ACTION, it) }
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent)
-            } else {
-                startService(serviceIntent)
-            }
-            finish()
-            return
-        }
-
-        // Fallback to MediaProjection (on Android 14+, force Entire Screen instead of Single App)
+    private fun requestScreenCaptureOnce() {
+        Toast.makeText(this, getString(R.string.choose_entire_screen_toast), Toast.LENGTH_LONG).show()
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val captureIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
@@ -104,11 +112,11 @@ class PermissionBridgeActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_OVERLAY) {
+        if (requestCode == REQ_APP_INFO || requestCode == REQ_OVERLAY) {
             if (Settings.canDrawOverlays(this)) {
-                checkNotificationPermissionAndStart()
+                checkNotificationPermissionAndCapture()
             } else {
-                finish()
+                showOverlayPermissionDialog()
             }
         } else if (requestCode == REQ_MEDIA_PROJECTION) {
             val serviceIntent = if (resultCode == RESULT_OK && data != null) {

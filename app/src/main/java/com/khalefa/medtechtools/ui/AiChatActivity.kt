@@ -5,6 +5,8 @@ import android.os.Bundle
 import android.util.Base64
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.khalefa.medtechtools.R
 import com.khalefa.medtechtools.prefs.PrefsManager
@@ -34,6 +36,13 @@ class AiChatActivity : AppCompatActivity() {
             setBackgroundColor(UiTheme.bg(this@AiChatActivity))
             val p = UiTheme.dp(this@AiChatActivity, 16)
             setPadding(p, p, p, p)
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val p = UiTheme.dp(this, 16)
+            v.setPadding(p + sys.left, p + sys.top, p + sys.right, p + sys.bottom)
+            insets
         }
 
         val header = TextView(this).apply {
@@ -102,7 +111,7 @@ class AiChatActivity : AppCompatActivity() {
             if (q.isEmpty()) return@primaryButton
 
             if (prefs.aiApiKey.isEmpty() || prefs.aiBaseUrl.isEmpty() || prefs.aiModel.isEmpty()) {
-Toast.makeText(this@AiChatActivity, "Enter & Save API Key, URL and Model first", Toast.LENGTH_SHORT).show()
+Toast.makeText(this@AiChatActivity, "Enter & Save API Key & Model first", Toast.LENGTH_SHORT).show()
                 return@primaryButton
             }
             chatLog.append("\n🧑 You:\n$q\n")

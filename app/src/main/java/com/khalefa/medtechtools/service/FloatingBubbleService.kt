@@ -395,13 +395,6 @@ class FloatingBubbleService : Service() {
         windowManager.addView(iv, params)
     }
 
-    /**
-     * Recognizes 8 distinct gestures drawn with the floating bubble:
-     * 1 & 2: Half-Circle Up / Down
-     * 3 & 4: L-Shape Up / Down
-     * 5 & 6: Triangle Up / Down (2 drawn sides against screen edge)
-     * 7 & 8: Clockwise / Counter-Clockwise Circle
-     */
     private fun detectBubbleGesture(pts: List<PointF>): String? {
         if (pts.size < 6) return null
         val start = pts.first()
@@ -436,7 +429,6 @@ class FloatingBubbleService : Service() {
         val signedArea = area2 / 2.0
         val iq = (4.0 * PI * abs(signedArea)) / (perimeter * perimeter)
 
-        // 7 & 8: Full Circles (closed loop back to start)
         if (endToStartDist < dpToPx(85) && width > dpToPx(45) && height > dpToPx(45) && iq > 0.36) {
             return if (signedArea > 0) prefs.gestureCircleCwAction else prefs.gestureCircleCcwAction
         }
@@ -444,19 +436,15 @@ class FloatingBubbleService : Service() {
         val startedOnLeft = start.x < screenW / 2f
         val maxInward = if (startedOnLeft) (maxX - start.x) else (start.x - minX)
 
-        // Returned near the starting X edge
         if (abs(end.x - start.x) < dpToPx(70) && maxInward >= dpToPx(40)) {
-            // 1 & 2: Half-Circles (arc ending significantly above or below start.y along the edge)
             if (abs(end.y - start.y) >= dpToPx(55)) {
                 return if (end.y < start.y) prefs.gestureHalfUpAction else prefs.gestureHalfDownAction
             }
-            // 5 & 6: Edge Triangles (2 drawn sides returning near start)
             val upReach = start.y - minY
             val downReach = maxY - start.y
             return if (upReach > downReach) prefs.gestureTriUpAction else prefs.gestureTriDownAction
         }
 
-        // 3 & 4: L-Shapes (moved inward and ended inward with vertical leg up or down)
         if (maxInward >= dpToPx(45) && abs(end.x - start.x) >= dpToPx(40) && abs(end.y - start.y) >= dpToPx(45)) {
             return if (end.y < start.y) prefs.gestureLUpAction else prefs.gestureLDownAction
         }
@@ -573,26 +561,6 @@ class FloatingBubbleService : Service() {
     }
 
     private fun captureAndCrop(pendingActionKey: String, onResult: (Bitmap) -> Unit) {
-        // Primary: Universal cross-app Accessibility Screenshot (Android 11+)
-        val acc = MedTechAccessibilityService.instance
-        if (acc != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            bubbleView?.visibility = View.INVISIBLE
-            handler.postDelayed({
-                acc.captureFullScreen { bmp ->
-                    handler.post {
-                        bubbleView?.visibility = View.VISIBLE
-                        if (bmp != null) {
-                            showCropOverlay(bmp, onResult)
-                        } else {
-                            Toast.makeText(this, "Tap again to capture", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            }, 90)
-            return
-        }
-
-        // Fallback: MediaProjection
         if (mediaProjection == null || virtualDisplay == null || imageReader == null) {
             launchActivitySafe(Intent(this, PermissionBridgeActivity::class.java).apply {
                 putExtra(PermissionBridgeActivity.EXTRA_PENDING_ACTION, pendingActionKey)

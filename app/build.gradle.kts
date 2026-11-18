@@ -11,8 +11,8 @@ android {
         applicationId = "com.khalefa.medtechtools"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
@@ -20,7 +20,6 @@ android {
 
     buildTypes {
         release {
-            // Keep identical debug keystore signature so v1.3 installs cleanly over v1.2
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true

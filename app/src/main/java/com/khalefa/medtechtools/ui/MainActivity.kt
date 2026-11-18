@@ -5,9 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -15,17 +13,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.khalefa.medtechtools.R
 import com.khalefa.medtechtools.prefs.PrefsManager
 import com.khalefa.medtechtools.service.FloatingBubbleService
-import com.khalefa.medtechtools.service.MedTechAccessibilityService
 import kotlin.system.exitProcess
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var prefs: PrefsManager
     private lateinit var toggleBubbleBtn: Button
-    private var accessibilityBtn: Button? = null
 
     private val pickIconLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -56,16 +54,62 @@ class MainActivity : AppCompatActivity() {
 
         val scroll = ScrollView(this).apply {
             setBackgroundColor(UiTheme.bg(this@MainActivity))
+            isFillViewport = true
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val p = UiTheme.dp(this@MainActivity, 16)
             setPadding(p, UiTheme.dp(this@MainActivity, 20), p, UiTheme.dp(this@MainActivity, 32))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
         }
 
-        // 1. Header Card with Rounded App Logo
-        val headerCard = UiTheme.createCard(this, goldBorder = true).apply {
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { _, insets ->
+            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val p = UiTheme.dp(this, 16)
+            root.setPadding(p + sys.left, p + sys.top, p + sys.right, UiTheme.dp(this, 24) + sys.bottom)
+            insets
+        }
+
+        // 1. Header Card with Top Sun/Moon Theme Toggle Button & Rounded Logo
+        val headerCard = UiTheme.createCard(this, goldBorder = true)
+
+        val topBar = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val themeToggleBtn = TextView(this).apply {
+            text = if (UiTheme.isDark(this@MainActivity)) "☀️" else "🌙"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            val btnSize = UiTheme.dp(this@MainActivity, 44)
+            layoutParams = FrameLayout.LayoutParams(btnSize, btnSize, Gravity.TOP or Gravity.END)
+            background = GradientDrawable().apply {
+                setColor(UiTheme.surface(this@MainActivity))
+                shape = GradientDrawable.OVAL
+                setStroke(UiTheme.dp(this@MainActivity, 1), UiTheme.goldSoft())
+            }
+            setOnClickListener {
+                prefs.appTheme = if (UiTheme.isDark(this@MainActivity)) "light" else "dark"
+                UiTheme.applyNightMode(this@MainActivity)
+                recreate()
+            }
+        }
+        topBar.addView(themeToggleBtn)
+
+        val logoContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(0, UiTheme.dp(this@MainActivity, 8), 0, 0)
         }
         val logoIv = ImageView(this).apply {
             setImageResource(R.drawable.ic_launcher)
@@ -79,15 +123,15 @@ class MainActivity : AppCompatActivity() {
                 bottomMargin = UiTheme.dp(this@MainActivity, 10)
             }
         }
-        headerCard.addView(logoIv)
-        headerCard.addView(TextView(this).apply {
+        logoContainer.addView(logoIv)
+        logoContainer.addView(TextView(this).apply {
             text = getString(R.string.app_name)
             textSize = 21f
             setTypeface(null, Typeface.BOLD)
             setTextColor(UiTheme.royalBlue())
             gravity = Gravity.CENTER
         })
-        headerCard.addView(TextView(this).apply {
+        logoContainer.addView(TextView(this).apply {
             text = getString(R.string.app_tagline)
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
@@ -95,18 +139,16 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             setPadding(0, 4, 0, 2)
         })
+        topBar.addView(logoContainer, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ))
+        headerCard.addView(topBar)
         root.addView(headerCard)
 
-        // 2. Service Controls Card (Single Toggle Button + Universal Screenshot Permission)
+        // 2. Service Controls Card (Single Toggle Button)
         val controlCard = UiTheme.createCard(this, goldBorder = false)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            accessibilityBtn = UiTheme.goldButton(this, getString(R.string.grant_accessibility), topMarginDp = 0) {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-            controlCard.addView(accessibilityBtn)
-        }
-
-        toggleBubbleBtn = UiTheme.primaryButton(this, getString(R.string.start_bubble), topMarginDp = 10) {
+        toggleBubbleBtn = UiTheme.primaryButton(this, getString(R.string.start_bubble), topMarginDp = 0) {
             if (FloatingBubbleService.isRunning) {
                 stopService(Intent(this@MainActivity, FloatingBubbleService::class.java))
                 FloatingBubbleService.isRunning = false
@@ -138,31 +180,9 @@ class MainActivity : AppCompatActivity() {
         })
         root.addView(guideCard)
 
-        // 4. Theme & Display Language Card
-        val appearanceCard = UiTheme.createCard(this, goldBorder = false)
-        addSectionHeader(appearanceCard, getString(R.string.theme_label), topPad = 0)
-        val themeSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@MainActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                listOf(getString(R.string.theme_light), getString(R.string.theme_dark))
-            )
-            setSelection(if (prefs.appTheme == "dark") 1 else 0)
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    val chosen = if (pos == 1) "dark" else "light"
-                    if (chosen != prefs.appTheme) {
-                        prefs.appTheme = chosen
-                        UiTheme.applyNightMode(this@MainActivity)
-                        recreate()
-                    }
-                }
-                override fun onNothingSelected(p: AdapterView<*>?) {}
-            }
-        }
-        appearanceCard.addView(themeSpinner)
-
-        addSectionHeader(appearanceCard, getString(R.string.language_label), topPad = UiTheme.dp(this, 14))
+        // 4. Display Language Card
+        val langCard = UiTheme.createCard(this, goldBorder = false)
+        addSectionHeader(langCard, getString(R.string.language_label), topPad = 0)
         val langSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@MainActivity,
@@ -191,8 +211,8 @@ class MainActivity : AppCompatActivity() {
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
         }
-        appearanceCard.addView(langSpinner)
-        root.addView(appearanceCard)
+        langCard.addView(langSpinner)
+        root.addView(langCard)
 
         // 5. Floating Bubble Size, Transparency & Gallery Save Card
         val bubbleCard = UiTheme.createCard(this, goldBorder = false)
@@ -309,7 +329,6 @@ class MainActivity : AppCompatActivity() {
         }
         actionsCard.addView(swipeToggle)
 
-        // 8 Gestures: Half-Circles at top, L-Shapes, Triangles, Circles at bottom
         addActionPicker(swipeContainer, getString(R.string.gesture_half_up), prefs.gestureHalfUpAction) { prefs.gestureHalfUpAction = it }
         addActionPicker(swipeContainer, getString(R.string.gesture_half_down), prefs.gestureHalfDownAction) { prefs.gestureHalfDownAction = it }
         addActionPicker(swipeContainer, getString(R.string.gesture_l_up), prefs.gestureLUpAction) { prefs.gestureLUpAction = it }
@@ -420,15 +439,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateServiceButtons() {
-        if (FloatingBubbleService.isRunning) {
-            toggleBubbleBtn.text = getString(R.string.stop_bubble)
+        toggleBubbleBtn.text = if (FloatingBubbleService.isRunning) {
+            getString(R.string.stop_bubble)
         } else {
-            toggleBubbleBtn.text = getString(R.string.start_bubble)
-        }
-        accessibilityBtn?.visibility = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MedTechAccessibilityService.isAvailable()) {
-            View.VISIBLE
-        } else {
-            View.GONE
+            getString(R.string.start_bubble)
         }
     }
 
