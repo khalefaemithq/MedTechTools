@@ -15,20 +15,31 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.*
+import android.util.Base64
 import android.view.*
 import android.view.animation.DecelerateInterpolator
 import android.widget.*
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
+import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.khalefa.medtechtools.R
 import com.khalefa.medtechtools.prefs.PrefsManager
 import com.khalefa.medtechtools.ui.*
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
 import java.net.URLEncoder
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.system.exitProcess
 
 class FloatingBubbleService : Service() {
@@ -176,15 +187,13 @@ class FloatingBubbleService : Service() {
             val reader = ImageReader.newInstance(screenW, screenH, PixelFormat.RGBA_8888, 2)
             reader.setOnImageAvailableListener({ r ->
                 val callback = pendingCaptureCallback
-                val image = r.acquireLatestImage()
-                if (image == null) return@setOnImageAvailableListener
+                val image = r.acquireLatestImage() ?: return@setOnImageAvailableListener
 
                 if (callback == null) {
                     image.close()
                     return@setOnImageAvailableListener
                 }
 
-                // Immediately stop surface feed after grabbing 1 clean screenshot
                 pendingCaptureCallback = null
                 captureTimeoutRunnable?.let { handler.removeCallbacks(it) }
                 try {
@@ -221,13 +230,12 @@ class FloatingBubbleService : Service() {
                     if (bmp != null) {
                         callback(bmp)
                     } else {
-                        Toast.makeText(this, "Capture failed, try again", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Tap again to capture", Toast.LENGTH_SHORT).show()
                     }
                 }
             }, handler)
             imageReader = reader
 
-            // Start idle with surface = null so it NEVER streams continuously
             virtualDisplay = projection.createVirtualDisplay(
                 "MedTechCapture",
                 screenW, screenH, screenDensity,
@@ -264,10 +272,10 @@ class FloatingBubbleService : Service() {
         var initialY = 0
         var initialTouchX = 0f
         var initialTouchY = 0f
-        var touchDownTime = 0L
         var isDragging = false
         var tapCount = 0
         var longPressTriggered = false
+        val gesturePoints = mutableListOf<PointF>()
 
         val longPressRunnable = Runnable {
             if (!isDragging) {
@@ -292,9 +300,10 @@ class FloatingBubbleService : Service() {
                     initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
-                    touchDownTime = SystemClock.uptimeMillis()
                     isDragging = false
                     longPressTriggered = false
+                    gesturePoints.clear()
+                    gesturePoints.add(PointF(event.rawX, event.rawY))
                     handler.postDelayed(longPressRunnable, 440)
                     true
                 }
@@ -310,30 +319,30 @@ class FloatingBubbleService : Service() {
                         params.x = (initialX + dx).coerceIn(0, (screenW - curSize).coerceAtLeast(0))
                         params.y = (initialY + dy).coerceIn(0, (screenH - curSize).coerceAtLeast(0))
                         windowManager.updateViewLayout(iv, params)
+
+                        val last = gesturePoints.last()
+                        if (hypot((event.rawX - last.x).toDouble(), (event.rawY - last.y).toDouble()) > 8.0) {
+                            gesturePoints.add(PointF(event.rawX, event.rawY))
+                        }
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     handler.removeCallbacks(longPressRunnable)
-                    val dx = event.rawX - initialTouchX
-                    val dy = event.rawY - initialTouchY
-                    val duration = SystemClock.uptimeMillis() - touchDownTime
 
                     if (isDragging) {
-                        if (prefs.swipeGesturesEnabled && duration < 260 && (abs(dx) in 45f..240f || abs(dy) in 45f..240f)) {
+                        val recognizedAction = if (prefs.swipeGesturesEnabled) {
+                            detectBubbleGesture(gesturePoints)
+                        } else null
+
+                        if (recognizedAction != null) {
                             params.x = initialX
                             params.y = initialY
                             windowManager.updateViewLayout(iv, params)
                             iv.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-
-                            val flickAction = if (abs(dx) > abs(dy)) {
-                                if (dx > 0) prefs.swipeRightAction else prefs.swipeLeftAction
-                            } else {
-                                if (dy > 0) prefs.swipeDownAction else prefs.swipeUpAction
-                            }
-                            executeAction(flickAction)
+                            executeAction(recognizedAction)
                         } else {
-                            // Snap smoothly to left or right edge while keeping vertical position
+                            // Normal drag: snap smoothly to nearest left/right edge
                             val curSize = params.width
                             val targetX = if (params.x + curSize / 2 < screenW / 2) 0 else (screenW - curSize).coerceAtLeast(0)
                             val targetY = params.y.coerceIn(0, (screenH - curSize).coerceAtLeast(0))
@@ -372,6 +381,74 @@ class FloatingBubbleService : Service() {
         windowManager.addView(iv, params)
     }
 
+    /**
+     * Recognizes 6 distinct gestures drawn with the floating bubble:
+     * 1. Clockwise Circle (circle_cw)
+     * 2. Counter-Clockwise Circle (circle_ccw)
+     * 3. L-Shape Up (l_up)
+     * 4. L-Shape Down (l_down)
+     * 5. Upper Edge Triangle (tri_up) - 2 drawn sides using phone edge as 3rd side
+     * 6. Lower Edge Triangle (tri_down) - 2 drawn sides using phone edge as 3rd side
+     */
+    private fun detectBubbleGesture(pts: List<PointF>): String? {
+        if (pts.size < 6) return null
+        val start = pts.first()
+        val end = pts.last()
+
+        var perimeter = 0.0
+        var minX = start.x
+        var maxX = start.x
+        var minY = start.y
+        var maxY = start.y
+        for (i in 1 until pts.size) {
+            val a = pts[i - 1]
+            val b = pts[i]
+            perimeter += hypot((b.x - a.x).toDouble(), (b.y - a.y).toDouble())
+            if (b.x < minX) minX = b.x
+            if (b.x > maxX) maxX = b.x
+            if (b.y < minY) minY = b.y
+            if (b.y > maxY) maxY = b.y
+        }
+        if (perimeter < dpToPx(90)) return null
+
+        val width = maxX - minX
+        val height = maxY - minY
+        val endToStartDist = hypot((end.x - start.x).toDouble(), (end.y - start.y).toDouble())
+
+        // Shoelace signed area (closed back to start)
+        var area2 = 0.0
+        for (i in pts.indices) {
+            val p1 = pts[i]
+            val p2 = pts[(i + 1) % pts.size]
+            area2 += (p1.x * p2.y - p2.x * p1.y).toDouble()
+        }
+        val signedArea = area2 / 2.0
+        val iq = (4.0 * PI * abs(signedArea)) / (perimeter * perimeter)
+
+        // 1 & 2: Circles (returns near start with high circularity)
+        if (endToStartDist < dpToPx(85) && width > dpToPx(45) && height > dpToPx(45) && iq > 0.36) {
+            return if (signedArea > 0) prefs.gestureCircleCwAction else prefs.gestureCircleCcwAction
+        }
+
+        // How far inward toward screen center did the path travel?
+        val startedOnLeft = start.x < screenW / 2f
+        val maxInward = if (startedOnLeft) (maxX - start.x) else (start.x - minX)
+
+        // 5 & 6: Edge Triangles (went inward then returned back to the same edge)
+        if (abs(end.x - start.x) < dpToPx(70) && maxInward >= dpToPx(45)) {
+            val upReach = start.y - minY
+            val downReach = maxY - start.y
+            return if (upReach > downReach) prefs.gestureTriUpAction else prefs.gestureTriDownAction
+        }
+
+        // 3 & 4: L-Shapes (moved inward and ended inward with vertical leg up or down)
+        if (maxInward >= dpToPx(45) && abs(end.x - start.x) >= dpToPx(40) && abs(end.y - start.y) >= dpToPx(45)) {
+            return if (end.y < start.y) prefs.gestureLUpAction else prefs.gestureLDownAction
+        }
+
+        return null
+    }
+
     fun applyBubbleAppearance() {
         val iv = bubbleView ?: return
         val sizePx = dpToPx(prefs.bubbleSizeDp)
@@ -400,37 +477,60 @@ class FloatingBubbleService : Service() {
         }
     }
 
+    private fun launchActivitySafe(intent: Intent, requestCode: Int = 200) {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val opts = ActivityOptions.makeBasic()
+                .setPendingIntentBackgroundActivityStartMode(
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                )
+            val pi = PendingIntent.getActivity(
+                this,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                opts.toBundle()
+            )
+            try {
+                pi.send()
+            } catch (_: Exception) {
+                startActivity(intent)
+            }
+        } else {
+            startActivity(intent)
+        }
+    }
+
     private fun executeAction(actionKey: String) {
         if (actionKey == PrefsManager.ACT_NONE) return
         dismissMenu()
 
         when (actionKey) {
             PrefsManager.ACT_SHOW_MENU -> showToolsMenu()
-            PrefsManager.ACT_SCREENSHOT -> captureScreenOnce(actionKey) { fullBmp ->
-                prefs.saveAndCopyImageToClipboard(fullBmp)
-                Toast.makeText(this, getString(R.string.copied_toast), Toast.LENGTH_SHORT).show()
-            }
             PrefsManager.ACT_CROP_COPY -> captureAndCrop(actionKey) { cropped ->
-                prefs.saveAndCopyImageToClipboard(cropped)
-                Toast.makeText(this, getString(R.string.copied_toast), Toast.LENGTH_SHORT).show()
+                if (prefs.saveToGallery) {
+                    val ok = prefs.saveBitmapToGallery(cropped)
+                    val msg = if (ok) getString(R.string.saved_gallery_toast) else "Failed to save to Gallery"
+                    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+                } else {
+                    prefs.saveAndCopyImageToClipboard(cropped)
+                    Toast.makeText(this, getString(R.string.copied_toast), Toast.LENGTH_SHORT).show()
+                }
             }
             PrefsManager.ACT_CROP_OCR -> captureAndCrop(actionKey) { cropped ->
-                runOfflineOcr(cropped) { extracted ->
+                runOcrSmart(cropped) { extracted ->
                     if (extracted.isEmpty()) {
-                        Toast.makeText(this, getString(R.string.ocr_empty), Toast.LENGTH_SHORT).show()
+                        val hint = if (prefs.aiApiKey.isEmpty()) {
+                            "${getString(R.string.ocr_empty)} (للعربية: أضف API Key في محادثة الذكاء الاصطناعي)"
+                        } else {
+                            getString(R.string.ocr_empty)
+                        }
+                        Toast.makeText(this, hint, Toast.LENGTH_LONG).show()
                     } else {
                         prefs.copyTextToSystemClipboard(extracted)
-                        Toast.makeText(this, "OCR:\n${extracted.take(90)}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "تم النسخ:\n${extracted.take(90)}", Toast.LENGTH_LONG).show()
                     }
                 }
-            }
-            PrefsManager.ACT_STYLUS_EDITOR -> captureAndCrop(actionKey) { cropped ->
-                val file = prefs.saveAndCopyImageToClipboard(cropped)
-                val intent = Intent(this, EditorActivity::class.java).apply {
-                    putExtra("image_path", file.absolutePath)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(intent)
             }
             PrefsManager.ACT_PIN_IMAGE -> captureAndCrop(actionKey) { cropped ->
                 showPinnedImage(cropped)
@@ -441,7 +541,7 @@ class FloatingBubbleService : Service() {
                 shareToGoogleSearch(file)
             }
             PrefsManager.ACT_GOOGLE_TRANSLATE -> captureAndCrop(actionKey) { cropped ->
-                runOfflineOcr(cropped) { extracted ->
+                runOcrSmart(cropped) { extracted ->
                     val targetUrl = if (extracted.isNotEmpty()) {
                         prefs.copyTextToSystemClipboard(extracted)
                         val encoded = URLEncoder.encode(extracted, "UTF-8")
@@ -449,31 +549,28 @@ class FloatingBubbleService : Service() {
                     } else {
                         "https://translate.google.com/"
                     }
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
+                    launchActivitySafe(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)), 202)
                 }
             }
             PrefsManager.ACT_AI_CHAT -> {
-                startActivity(Intent(this, AiChatActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
+                launchActivitySafe(Intent(this, AiChatActivity::class.java), 203)
             }
             PrefsManager.ACT_EXIT -> forceExitEverything()
         }
     }
 
-    private fun captureScreenOnce(pendingActionKey: String, onResult: (Bitmap) -> Unit) {
+    private fun captureAndCrop(pendingActionKey: String, onResult: (Bitmap) -> Unit) {
         if (mediaProjection == null || virtualDisplay == null || imageReader == null) {
-            startActivity(Intent(this, PermissionBridgeActivity::class.java).apply {
+            launchActivitySafe(Intent(this, PermissionBridgeActivity::class.java).apply {
                 putExtra(PermissionBridgeActivity.EXTRA_PENDING_ACTION, pendingActionKey)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
+            }, 204)
             return
         }
 
         updateDisplayMetrics()
-        pendingCaptureCallback = onResult
+        pendingCaptureCallback = { cleanBmp ->
+            showCropOverlay(cleanBmp, onResult)
+        }
         bubbleView?.visibility = View.INVISIBLE
 
         captureTimeoutRunnable?.let { handler.removeCallbacks(it) }
@@ -489,23 +586,16 @@ class FloatingBubbleService : Service() {
             }
         }
         captureTimeoutRunnable = timeout
-        handler.postDelayed(timeout, 700)
+        handler.postDelayed(timeout, 750)
 
         handler.postDelayed({
             try {
                 virtualDisplay?.setSurface(imageReader?.surface)
-                virtualDisplay?.resize(screenW, screenH, screenDensity)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 pendingCaptureCallback = null
                 bubbleView?.visibility = View.VISIBLE
             }
         }, 90)
-    }
-
-    private fun captureAndCrop(pendingActionKey: String, onResult: (Bitmap) -> Unit) {
-        captureScreenOnce(pendingActionKey) { cleanBmp ->
-            showCropOverlay(cleanBmp, onResult)
-        }
     }
 
     private fun showCropOverlay(screenshot: Bitmap, onResult: (Bitmap) -> Unit) {
@@ -540,16 +630,72 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun runOfflineOcr(bitmap: Bitmap, onDone: (String) -> Unit) {
-        val inputImage = InputImage.fromBitmap(bitmap, 0)
+    private fun runOcrSmart(bitmap: Bitmap, onDone: (String) -> Unit) {
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val inputImage = InputImage.fromBitmap(bitmap, 0)
+
         recognizer.process(inputImage)
             .addOnSuccessListener { result ->
-                onDone(result.text.trim())
+                val text = result.text.trim()
+                if (text.isNotEmpty()) {
+                    onDone(text)
+                } else if (prefs.aiApiKey.isNotEmpty()) {
+                    runVisionAiOcr(bitmap, onDone)
+                } else {
+                    onDone("")
+                }
             }
             .addOnFailureListener {
-                onDone("")
+                try {
+                    val installReq = ModuleInstallRequest.newBuilder().addApi(recognizer).build()
+                    ModuleInstall.getClient(this).installModules(installReq)
+                } catch (_: Exception) {
+                }
+                if (prefs.aiApiKey.isNotEmpty()) {
+                    runVisionAiOcr(bitmap, onDone)
+                } else {
+                    onDone("")
+                }
             }
+    }
+
+    private fun runVisionAiOcr(bitmap: Bitmap, onDone: (String) -> Unit) {
+        Thread {
+            try {
+                val baos = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.PNG, 95, baos)
+                val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+
+                val conn = (URL(prefs.aiBaseUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Authorization", "Bearer ${prefs.aiApiKey}")
+                    doOutput = true
+                }
+
+                val contentArr = JSONArray().apply {
+                    put(JSONObject().put("type", "text").put("text", "Extract all text (Arabic and/or English) from this image verbatim. Return ONLY the extracted text without any extra commentary."))
+                    put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:image/png;base64,$b64")))
+                }
+                val body = JSONObject().apply {
+                    put("model", prefs.aiModel)
+                    put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", contentArr)))
+                }
+
+                OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
+                val code = conn.responseCode
+                val resp = (if (code in 200..299) conn.inputStream else conn.errorStream).bufferedReader().readText()
+                val extracted = if (code in 200..299) {
+                    JSONObject(resp).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").trim()
+                } else ""
+
+                handler.post { onDone(extracted) }
+            } catch (_: Exception) {
+                handler.post { onDone("") }
+            }
+        }.start()
     }
 
     private fun shareToGoogleSearch(file: File) {
@@ -568,7 +714,7 @@ class FloatingBubbleService : Service() {
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            val chooser = Intent.createChooser(fallback, "Google Search").apply {
+            val chooser = Intent.createChooser(fallback, getString(R.string.tool_google_search)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(chooser)
@@ -581,15 +727,15 @@ class FloatingBubbleService : Service() {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F50A1628"))
+                setColor(Color.parseColor("#FAFFFFFF"))
                 cornerRadius = dpToPx(18).toFloat()
-                setStroke(dpToPx(2), UiTheme.GOLD)
+                setStroke(dpToPx(2), UiTheme.GOLD_SOFT)
             }
         }
 
         val title = TextView(this).apply {
             text = "${getString(R.string.app_name)} • ${getString(R.string.app_tagline)}"
-            setTextColor(UiTheme.GOLD_LIGHT)
+            setTextColor(UiTheme.ROYAL_BLUE)
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, dpToPx(8))
@@ -597,9 +743,7 @@ class FloatingBubbleService : Service() {
         container.addView(title)
 
         val orderedMenuKeys = listOf(
-            PrefsManager.ACT_SCREENSHOT to getString(R.string.tool_screenshot),
             PrefsManager.ACT_CROP_COPY to getString(R.string.tool_crop_copy),
-            PrefsManager.ACT_STYLUS_EDITOR to getString(R.string.tool_stylus),
             PrefsManager.ACT_CROP_OCR to getString(R.string.tool_ocr),
             PrefsManager.ACT_PIN_IMAGE to getString(R.string.tool_pin),
             PrefsManager.ACT_CLIPBOARD to getString(R.string.tool_clipboard),
@@ -613,8 +757,9 @@ class FloatingBubbleService : Service() {
             if (!prefs.isToolEnabled(key)) continue
             val btn = TextView(this).apply {
                 text = "• $label"
-                setTextColor(if (key == PrefsManager.ACT_EXIT) Color.parseColor("#EF5350") else UiTheme.TEXT_PRIMARY)
+                setTextColor(if (key == PrefsManager.ACT_EXIT) UiTheme.DANGER_SOFT else UiTheme.TEXT_PRIMARY)
                 textSize = 14.5f
+                setTypeface(null, if (key == PrefsManager.ACT_EXIT) Typeface.BOLD else Typeface.NORMAL)
                 setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10))
                 setOnClickListener {
                     dismissMenu()
@@ -626,7 +771,7 @@ class FloatingBubbleService : Service() {
 
         val closeBtn = TextView(this).apply {
             text = "✕"
-            setTextColor(UiTheme.GOLD_LIGHT)
+            setTextColor(UiTheme.ROYAL_BLUE)
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(0, dpToPx(8), 0, 0)
@@ -659,7 +804,7 @@ class FloatingBubbleService : Service() {
         pinnedView?.let { if (it.isAttachedToWindow) windowManager.removeView(it) }
 
         val frame = FrameLayout(this).apply {
-            setBackgroundColor(UiTheme.GOLD)
+            setBackgroundColor(UiTheme.GOLD_SOFT)
             setPadding(5, 5, 5, 5)
         }
         val iv = ImageView(this).apply {
@@ -669,7 +814,7 @@ class FloatingBubbleService : Service() {
         val close = TextView(this).apply {
             text = "✕"
             setTextColor(Color.WHITE)
-            setBackgroundColor(UiTheme.DANGER_RED)
+            setBackgroundColor(UiTheme.DANGER_SOFT)
             setPadding(18, 8, 18, 8)
             setOnClickListener {
                 if (frame.isAttachedToWindow) windowManager.removeView(frame)
@@ -730,15 +875,15 @@ class FloatingBubbleService : Service() {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F50A1628"))
+                setColor(Color.parseColor("#FAFFFFFF"))
                 cornerRadius = dpToPx(18).toFloat()
-                setStroke(dpToPx(2), UiTheme.GOLD)
+                setStroke(dpToPx(2), UiTheme.GOLD_SOFT)
             }
         }
 
         val header = TextView(this).apply {
             text = getString(R.string.tool_clipboard)
-            setTextColor(UiTheme.GOLD_LIGHT)
+            setTextColor(UiTheme.ROYAL_BLUE)
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, dpToPx(10))
@@ -759,34 +904,23 @@ class FloatingBubbleService : Service() {
             }
             val thumb = ImageView(this).apply {
                 setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
-                layoutParams = LinearLayout.LayoutParams(dpToPx(74), dpToPx(52))
+                layoutParams = LinearLayout.LayoutParams(dpToPx(84), dpToPx(56))
                 scaleType = ImageView.ScaleType.CENTER_CROP
             }
             val btnCopy = Button(this).apply {
                 text = "Copy"
-                setTextColor(UiTheme.TEXT_PRIMARY)
+                setTextColor(Color.WHITE)
                 setBackgroundColor(UiTheme.ROYAL_BLUE)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = dpToPx(10)
+                }
                 setOnClickListener {
                     prefs.copyFileUriToSystemClipboard(file)
                     Toast.makeText(this@FloatingBubbleService, getString(R.string.copied_toast), Toast.LENGTH_SHORT).show()
                 }
             }
-            val btnEdit = Button(this).apply {
-                text = "Edit"
-                setTextColor(UiTheme.BG_NAVY)
-                setBackgroundColor(UiTheme.GOLD)
-                setOnClickListener {
-                    clipboardDialogView?.let { if (it.isAttachedToWindow) windowManager.removeView(it) }
-                    clipboardDialogView = null
-                    startActivity(Intent(this@FloatingBubbleService, EditorActivity::class.java).apply {
-                        putExtra("image_path", file.absolutePath)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
-                }
-            }
             row.addView(thumb)
             row.addView(btnCopy)
-            row.addView(btnEdit)
             list.addView(row)
         }
         scroll.addView(list)
@@ -794,8 +928,8 @@ class FloatingBubbleService : Service() {
 
         val closeBtn = Button(this).apply {
             text = "✕"
-            setTextColor(UiTheme.GOLD_LIGHT)
-            setBackgroundColor(UiTheme.SURFACE_BLUE)
+            setTextColor(UiTheme.ROYAL_BLUE)
+            setBackgroundColor(UiTheme.SURFACE_TINT)
             setOnClickListener {
                 clipboardDialogView?.let { if (it.isAttachedToWindow) windowManager.removeView(it) }
                 clipboardDialogView = null
@@ -805,7 +939,7 @@ class FloatingBubbleService : Service() {
 
         clipboardDialogView = root
         val params = WindowManager.LayoutParams(
-            dpToPx(310),
+            dpToPx(300),
             WindowManager.LayoutParams.WRAP_CONTENT,
             getOverlayWindowType(),
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
@@ -875,13 +1009,13 @@ class FloatingBubbleService : Service() {
         val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = UiTheme.ROYAL_BLUE }
         c.drawCircle(size / 2f, size / 2f, size / 2f, p)
         val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = UiTheme.GOLD
+            color = UiTheme.GOLD_SOFT
             style = Paint.Style.STROKE
             strokeWidth = size * 0.07f
         }
         c.drawCircle(size / 2f, size / 2f, size * 0.45f, ring)
         val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = UiTheme.GOLD_LIGHT
+            color = UiTheme.GOLD_PALE
             strokeWidth = size * 0.11f
             strokeCap = Paint.Cap.ROUND
         }

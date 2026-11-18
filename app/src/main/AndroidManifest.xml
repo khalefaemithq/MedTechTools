@@ -36,11 +36,6 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <activity
-            android:name=".ui.EditorActivity"
-            android:exported="false"
-            android:screenOrientation="unspecified" />
-
-        <activity
             android:name=".ui.AiChatActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

@@ -14,27 +14,27 @@ class CropOverlayView(
 ) : View(context) {
 
     private val dimPaint = Paint().apply {
-        color = Color.parseColor("#99050D1A")
+        color = Color.parseColor("#880F172A")
     }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#D4AF37")
+        color = Color.parseColor("#C9A84C")
         style = Paint.Style.STROKE
         strokeWidth = 5f
     }
     private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#66D4AF37")
+        color = Color.parseColor("#66C9A84C")
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#FFD54F")
+        color = Color.parseColor("#F5E6B8")
         style = Paint.Style.FILL
     }
     private val btnConfirmPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#1565C0")
+        color = Color.parseColor("#2B6CB0")
     }
     private val btnCancelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#B71C1C")
+        color = Color.parseColor("#C05656")
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -46,7 +46,7 @@ class CropOverlayView(
     private val destFullRect = Rect()
     private var cropRect = RectF()
     private var initialized = false
-    private var activeCorner = -1 // 0=TL, 1=TR, 2=BL, 3=BR, 4=MOVE
+    private var activeCorner = -1
     private var lastX = 0f
     private var lastY = 0f
 
@@ -178,7 +178,6 @@ class CropOverlayView(
     }
 
     private fun performCrop() {
-
         if (width <= 0 || height <= 0) {
             onCancel()
             return

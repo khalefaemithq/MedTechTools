@@ -35,7 +35,7 @@ class TermsActivity : AppCompatActivity() {
         })
 
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(UiTheme.BG_NAVY)
+            setBackgroundColor(UiTheme.BG_LIGHT)
             isFillViewport = true
         }
 
@@ -52,7 +52,7 @@ class TermsActivity : AppCompatActivity() {
             text = getString(R.string.app_name)
             textSize = 22f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.GOLD_LIGHT)
+            setTextColor(UiTheme.ROYAL_BLUE)
             gravity = Gravity.CENTER
         }
 
@@ -60,7 +60,7 @@ class TermsActivity : AppCompatActivity() {
             text = getString(R.string.app_tagline)
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.BRIGHT_BLUE)
+            setTextColor(UiTheme.GOLD_TEXT)
             gravity = Gravity.CENTER
             setPadding(0, 6, 0, 20)
         }
@@ -96,9 +96,9 @@ class TermsActivity : AppCompatActivity() {
         card.addView(devFooter)
 
         if (viewOnlyMode) {
-            card.addView(UiTheme.goldButton(this, "OK", topMarginDp = 4) { finish() })
+            card.addView(UiTheme.primaryButton(this, "OK", topMarginDp = 4) { finish() })
         } else {
-            card.addView(UiTheme.goldButton(this, getString(R.string.terms_agree_btn), topMarginDp = 4) {
+            card.addView(UiTheme.primaryButton(this, getString(R.string.terms_agree_btn), topMarginDp = 4) {
                 prefs.termsAccepted = true
                 startActivity(Intent(this@TermsActivity, MainActivity::class.java))
                 finish()

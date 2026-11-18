@@ -2,10 +2,14 @@ package com.khalefa.medtechtools.prefs
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
@@ -15,11 +19,9 @@ class PrefsManager(private val context: Context) {
 
     companion object {
         const val ACT_NONE = "none"
-        const val ACT_SCREENSHOT = "screenshot"
         const val ACT_CROP_COPY = "crop_copy"
         const val ACT_SHOW_MENU = "show_menu"
         const val ACT_CROP_OCR = "crop_ocr"
-        const val ACT_STYLUS_EDITOR = "stylus_editor"
         const val ACT_PIN_IMAGE = "pin_image"
         const val ACT_CLIPBOARD = "clipboard"
         const val ACT_GOOGLE_SEARCH = "google_search"
@@ -29,11 +31,9 @@ class PrefsManager(private val context: Context) {
 
         val ALL_ACTIONS = listOf(
             ACT_NONE,
-            ACT_SCREENSHOT,
             ACT_CROP_COPY,
             ACT_SHOW_MENU,
             ACT_CROP_OCR,
-            ACT_STYLUS_EDITOR,
             ACT_PIN_IMAGE,
             ACT_CLIPBOARD,
             ACT_GOOGLE_SEARCH,
@@ -59,7 +59,6 @@ class PrefsManager(private val context: Context) {
         get() = prefs.getInt("bubble_size", 56)
         set(value) = prefs.edit().putInt("bubble_size", value.coerceIn(36, 96)).apply()
 
-    // Logical Transparency: 0% = fully solid (alpha 1.0), 80% = very transparent (alpha 0.2)
     var bubbleTransparency: Int
         get() = prefs.getInt("bubble_transparency", 15)
         set(value) = prefs.edit().putInt("bubble_transparency", value.coerceIn(0, 80)).apply()
@@ -72,13 +71,14 @@ class PrefsManager(private val context: Context) {
         get() = prefs.getInt("bubble_y", 320)
         set(value) = prefs.edit().putInt("bubble_y", value).apply()
 
-    // Triple-Tap Customizable Defaults:
-    // 1. Single Tap -> Instant Screenshot to Private Clipboard
-    // 2. Double Tap -> Crop & Extract Text (OCR)
-    // 3. Long Press -> Show Customizable Tools Menu
+    var saveToGallery: Boolean
+        get() = prefs.getBoolean("save_to_gallery", false)
+        set(value) = prefs.edit().putBoolean("save_to_gallery", value).apply()
+
+    // Tap Defaults
     var singleTapAction: String
-        get() = prefs.getString("act_single_v11", ACT_SCREENSHOT) ?: ACT_SCREENSHOT
-        set(value) = prefs.edit().putString("act_single_v11", value).apply()
+        get() = prefs.getString("act_single_v12", ACT_CROP_COPY) ?: ACT_CROP_COPY
+        set(value) = prefs.edit().putString("act_single_v12", value).apply()
 
     var doubleTapAction: String
         get() = prefs.getString("act_double", ACT_CROP_OCR) ?: ACT_CROP_OCR
@@ -88,28 +88,36 @@ class PrefsManager(private val context: Context) {
         get() = prefs.getString("act_long", ACT_SHOW_MENU) ?: ACT_SHOW_MENU
         set(value) = prefs.edit().putString("act_long", value).apply()
 
+    // 6-Gesture System (2 Circles, 2 L-Shapes, 2 Edge Triangles)
     var swipeGesturesEnabled: Boolean
         get() = prefs.getBoolean("swipe_gestures_enabled", false)
         set(value) = prefs.edit().putBoolean("swipe_gestures_enabled", value).apply()
 
-    var swipeUpAction: String
-        get() = prefs.getString("act_swipe_up", ACT_STYLUS_EDITOR) ?: ACT_STYLUS_EDITOR
-        set(value) = prefs.edit().putString("act_swipe_up", value).apply()
+    var gestureCircleCwAction: String
+        get() = prefs.getString("act_g_circle_cw", ACT_CLIPBOARD) ?: ACT_CLIPBOARD
+        set(value) = prefs.edit().putString("act_g_circle_cw", value).apply()
 
-    var swipeDownAction: String
-        get() = prefs.getString("act_swipe_down", ACT_CLIPBOARD) ?: ACT_CLIPBOARD
-        set(value) = prefs.edit().putString("act_swipe_down", value).apply()
+    var gestureCircleCcwAction: String
+        get() = prefs.getString("act_g_circle_ccw", ACT_AI_CHAT) ?: ACT_AI_CHAT
+        set(value) = prefs.edit().putString("act_g_circle_ccw", value).apply()
 
-    var swipeLeftAction: String
-        get() = prefs.getString("act_swipe_left", ACT_GOOGLE_TRANSLATE) ?: ACT_GOOGLE_TRANSLATE
-        set(value) = prefs.edit().putString("act_swipe_left", value).apply()
+    var gestureLUpAction: String
+        get() = prefs.getString("act_g_l_up", ACT_GOOGLE_TRANSLATE) ?: ACT_GOOGLE_TRANSLATE
+        set(value) = prefs.edit().putString("act_g_l_up", value).apply()
 
-    var swipeRightAction: String
-        get() = prefs.getString("act_swipe_right", ACT_GOOGLE_SEARCH) ?: ACT_GOOGLE_SEARCH
-        set(value) = prefs.edit().putString("act_swipe_right", value).apply()
+    var gestureLDownAction: String
+        get() = prefs.getString("act_g_l_down", ACT_GOOGLE_SEARCH) ?: ACT_GOOGLE_SEARCH
+        set(value) = prefs.edit().putString("act_g_l_down", value).apply()
+
+    var gestureTriUpAction: String
+        get() = prefs.getString("act_g_tri_up", ACT_PIN_IMAGE) ?: ACT_PIN_IMAGE
+        set(value) = prefs.edit().putString("act_g_tri_up", value).apply()
+
+    var gestureTriDownAction: String
+        get() = prefs.getString("act_g_tri_down", ACT_CROP_OCR) ?: ACT_CROP_OCR
+        set(value) = prefs.edit().putString("act_g_tri_down", value).apply()
 
     fun isToolEnabled(actionKey: String): Boolean {
-
         if (actionKey == ACT_NONE || actionKey == ACT_SHOW_MENU) return false
         return prefs.getBoolean("tool_enabled_$actionKey", true)
     }
@@ -177,6 +185,40 @@ class PrefsManager(private val context: Context) {
         }
         copyFileUriToSystemClipboard(file)
         return file
+    }
+
+    fun saveBitmapToGallery(bitmap: Bitmap): Boolean {
+        return try {
+            val filename = "MedTech_${System.currentTimeMillis()}.png"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, filename)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/MedTechTools")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: return false
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                context.contentResolver.update(uri, values, null, null)
+                true
+            } else {
+                @Suppress("DEPRECATION")
+                val picDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "MedTechTools")
+                if (!picDir.exists()) picDir.mkdirs()
+                val outFile = File(picDir, filename)
+                FileOutputStream(outFile).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                }
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun copyFileUriToSystemClipboard(file: File) {

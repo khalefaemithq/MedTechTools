@@ -30,7 +30,7 @@ class AiChatActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(UiTheme.BG_NAVY)
+            setBackgroundColor(UiTheme.BG_LIGHT)
             val p = UiTheme.dp(this@AiChatActivity, 16)
             setPadding(p, p, p, p)
         }
@@ -39,11 +39,11 @@ class AiChatActivity : AppCompatActivity() {
             text = "${getString(R.string.app_name)} • AI Assistant"
             textSize = 18f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.GOLD_LIGHT)
+            setTextColor(UiTheme.ROYAL_BLUE)
             setPadding(0, 0, 0, 12)
         }
 
-        val apiCard = UiTheme.createCard(this, goldBorder = false)
+        val apiCard = UiTheme.createCard(this, goldBorder = true)
         val urlInput = EditText(this).apply {
             hint = "API Endpoint URL"
             setTextColor(UiTheme.TEXT_PRIMARY)
@@ -85,7 +85,7 @@ class AiChatActivity : AppCompatActivity() {
 
         val checkClip = CheckBox(this).apply {
             text = "Attach Latest Cropped Screenshot"
-            setTextColor(UiTheme.GOLD_LIGHT)
+            setTextColor(UiTheme.ROYAL_BLUE)
             setOnCheckedChangeListener { _, checked -> attachLatestClip = checked }
         }
 
@@ -96,12 +96,12 @@ class AiChatActivity : AppCompatActivity() {
             setText(prefs.getLastExtractedText())
         }
 
-        val btnSend = UiTheme.goldButton(this, "Send", topMarginDp = 8) {
+        val btnSend = UiTheme.primaryButton(this, "Send", topMarginDp = 8) {
             val q = promptInput.text.toString().trim()
-            if (q.isEmpty()) return@goldButton
+            if (q.isEmpty()) return@primaryButton
             if (prefs.aiApiKey.isEmpty()) {
                 Toast.makeText(this@AiChatActivity, "Enter & Save API Key first", Toast.LENGTH_SHORT).show()
-                return@goldButton
+                return@primaryButton
             }
             chatLog.append("\n🧑 You:\n$q\n")
             promptInput.setText("")

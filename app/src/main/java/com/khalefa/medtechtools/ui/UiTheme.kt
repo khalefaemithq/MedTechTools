@@ -9,18 +9,20 @@ import android.widget.Button
 import android.widget.LinearLayout
 
 object UiTheme {
-    val BG_NAVY = Color.parseColor("#0A1628")
-    val CARD_BLUE = Color.parseColor("#112240")
-    val SURFACE_BLUE = Color.parseColor("#162D50")
-    val BORDER_BLUE = Color.parseColor("#233554")
-    val ROYAL_BLUE = Color.parseColor("#1565C0")
-    val BRIGHT_BLUE = Color.parseColor("#1E88E5")
-    val GOLD = Color.parseColor("#D4AF37")
-    val GOLD_LIGHT = Color.parseColor("#FFD54F")
-    val TEXT_PRIMARY = Color.parseColor("#F8FAFC")
-    val TEXT_MUTED = Color.parseColor("#94A3B8")
-    val DANGER_RED = Color.parseColor("#B71C1C")
-    val DANGER_BORDER = Color.parseColor("#EF5350")
+    // Light Royal Blue & Soft Gold Palette
+    val BG_LIGHT = Color.parseColor("#F0F4FA")
+    val CARD_WHITE = Color.parseColor("#FFFFFF")
+    val SURFACE_TINT = Color.parseColor("#E6EEF9")
+    val BORDER_BLUE = Color.parseColor("#CBD8EC")
+    val ROYAL_BLUE = Color.parseColor("#2B6CB0")
+    val BRIGHT_BLUE = Color.parseColor("#3B82F6")
+    val GOLD_SOFT = Color.parseColor("#C9A84C")
+    val GOLD_PALE = Color.parseColor("#F5E6B8")
+    val GOLD_TEXT = Color.parseColor("#7A5C12")
+    val TEXT_PRIMARY = Color.parseColor("#1E293B")
+    val TEXT_MUTED = Color.parseColor("#475569")
+    val DANGER_SOFT = Color.parseColor("#C05656")
+    val DANGER_BORDER = Color.parseColor("#E08E8E")
 
     fun dp(ctx: Context, value: Int): Int =
         (value * ctx.resources.displayMetrics.density).toInt()
@@ -31,10 +33,11 @@ object UiTheme {
             val p = dp(ctx, 16)
             setPadding(p, p, p, p)
             background = GradientDrawable().apply {
-                setColor(CARD_BLUE)
+                setColor(CARD_WHITE)
                 cornerRadius = dp(ctx, 16).toFloat()
-                setStroke(dp(ctx, 1), if (goldBorder) GOLD else BORDER_BLUE)
+                setStroke(dp(ctx, 1), if (goldBorder) GOLD_SOFT else BORDER_BLUE)
             }
+            elevation = dp(ctx, 2).toFloat()
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -76,27 +79,27 @@ object UiTheme {
         return styleButton(ctx, Button(ctx).apply {
             text = label
             setOnClickListener { onClick() }
-        }, ROYAL_BLUE, TEXT_PRIMARY, GOLD, topMarginDp)
+        }, ROYAL_BLUE, Color.WHITE, BRIGHT_BLUE, topMarginDp)
     }
 
     fun goldButton(ctx: Context, label: String, topMarginDp: Int = 8, onClick: () -> Unit): Button {
         return styleButton(ctx, Button(ctx).apply {
             text = label
             setOnClickListener { onClick() }
-        }, GOLD, BG_NAVY, GOLD_LIGHT, topMarginDp)
+        }, GOLD_PALE, GOLD_TEXT, GOLD_SOFT, topMarginDp)
     }
 
     fun secondaryButton(ctx: Context, label: String, topMarginDp: Int = 8, onClick: () -> Unit): Button {
         return styleButton(ctx, Button(ctx).apply {
             text = label
             setOnClickListener { onClick() }
-        }, SURFACE_BLUE, GOLD_LIGHT, BORDER_BLUE, topMarginDp)
+        }, SURFACE_TINT, ROYAL_BLUE, BORDER_BLUE, topMarginDp)
     }
 
     fun dangerButton(ctx: Context, label: String, topMarginDp: Int = 12, onClick: () -> Unit): Button {
         return styleButton(ctx, Button(ctx).apply {
             text = label
             setOnClickListener { onClick() }
-        }, DANGER_RED, TEXT_PRIMARY, DANGER_BORDER, topMarginDp)
+        }, DANGER_SOFT, Color.WHITE, DANGER_BORDER, topMarginDp)
     }
 }
