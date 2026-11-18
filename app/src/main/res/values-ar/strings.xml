@@ -1,15 +1,15 @@
 <resources>
     <string name="app_name">أدوات ميدتيك - MedTech Tools</string>
     <string name="app_tagline">أداة كل الطلاب</string>
-    <string name="subtitle_dev">تطوير: خليفة اميثق • الإصدار v1.0.0</string>
+    <string name="subtitle_dev">تطوير: خليفة اميثق • الإصدار v1.1</string>
     <string name="telegram_channel">قناة ميدتيك على تيليجرام (@KhalefaTechMed)</string>
     <string name="start_bubble">تشغيل الكرة العائمة</string>
     <string name="stop_bubble">إيقاف الخدمة</string>
-    <string name="exit_app">إغلاق التطبيق نهائياً</string>
+    <string name="exit_app">خروج فقط</string>
     <string name="grant_overlay">منح إذن الظهور فوق التطبيقات</string>
     <string name="bubble_settings">تخصيص الكرة العائمة</string>
     <string name="bubble_size">حجم الكرة</string>
-    <string name="bubble_opacity">شفافية الكرة</string>
+    <string name="bubble_transparency">شفافية الكرة</string>
     <string name="pick_bubble_icon">تعيين صورة مخصصة للكرة</string>
     <string name="reset_bubble_icon">استعادة الأيقونة الافتراضية</string>
     <string name="triple_actions">تخصيص السلوك الثلاثي والإيماءات</string>
@@ -23,7 +23,8 @@
     <string name="swipe_right">إيماءة السحب لليمين</string>
     <string name="visible_tools">تحديد الأدوات الظاهرة في القائمة</string>
     <string name="tool_none">معطّل / بدون إجراء</string>
-    <string name="tool_crop_copy">قص ونسخ لقطة شاشة فوراً</string>
+    <string name="tool_screenshot">لقطة شاشة</string>
+    <string name="tool_crop_copy">قص ونسخ لقطة شاشة</string>
     <string name="tool_ocr">تحديد واستخراج النص (OCR)</string>
     <string name="tool_stylus">محرر القلم والألوان الكامل</string>
     <string name="tool_pin">تثبيت لقطة عائمة على الشاشة</string>
@@ -32,9 +33,9 @@
     <string name="tool_google_translate">ترجمة فورية بجوجل</string>
     <string name="tool_ai_chat">محادثة الذكاء الاصطناعي (AI)</string>
     <string name="tool_show_menu">عرض قائمة الأدوات</string>
-    <string name="tool_exit">خروج وإيقاف التطبيق بالكامل</string>
+    <string name="tool_exit">خروج فقط</string>
     <string name="language_label">لغة العرض</string>
-    <string name="copied_toast">تم النسخ للحافظة (دون الحفظ في الاستوديو)</string>
+    <string name="copied_toast">تم حفظ لقطة الشاشة في الحافظة (مخفية عن المعرض)</string>
     <string name="ocr_empty">لم يتم العثور على نص في المنطقة المحددة</string>
     <string name="terms_title">شروط الخدمة وتنبيه الخصوصية</string>
     <string name="terms_body">1. شرط الالتزام بالضوابط الشرعية:\nباستخدامك لتطبيق أدوات ميدتيك (أداة كل الطلاب)، فإنك تتعهد وتلتزم بعدم استخدام التطبيق في أي عمل يخالف تعاليم الدين الإسلامي الحنيف، أو في أي مجالات وتخصصات محرمة أو فيها شبهة شرعية.\n\n2. الخصوصية والتخزين المحلي:\nجميع لقطات الشاشة والنصوص تُحفظ محلياً في ذاكرة التطبيق الخاصة (مخفية تماماً عن معرض الصور) ولا تُرفع لأي خادم خارجي إلا عند إرسالها بواسطتك للبحث في جوجل أو لمفتاح الـ API الخاص بك.</string>

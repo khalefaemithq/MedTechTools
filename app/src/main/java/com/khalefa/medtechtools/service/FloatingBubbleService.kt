@@ -1,5 +1,6 @@
 package com.khalefa.medtechtools.service
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.*
 import android.content.Context
@@ -15,6 +16,7 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.*
 import android.view.*
+import android.view.animation.DecelerateInterpolator
 import android.widget.*
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
@@ -55,6 +57,9 @@ class FloatingBubbleService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+    private var pendingCaptureCallback: ((Bitmap) -> Unit)? = null
+    private var captureTimeoutRunnable: Runnable? = null
+
     private var screenW = 1080
     private var screenH = 2400
     private var screenDensity = 320
@@ -128,9 +133,13 @@ class FloatingBubbleService : Service() {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra(EXTRA_RESULT_DATA)
                 }
+                val pendingAct = intent.getStringExtra(PermissionBridgeActivity.EXTRA_PENDING_ACTION)
                 if (resultCode == Activity.RESULT_OK && data != null) {
                     startForegroundCompat(true)
                     setupMediaProjection(resultCode, data)
+                    if (!pendingAct.isNullOrEmpty()) {
+                        handler.postDelayed({ executeAction(pendingAct) }, 220)
+                    }
                 }
             }
             ACTION_REFRESH_BUBBLE -> {
@@ -154,21 +163,76 @@ class FloatingBubbleService : Service() {
             val projection = mpm.getMediaProjection(resultCode, data)
             mediaProjection = projection
 
-            // Required on Android 14+ before createVirtualDisplay()
             projection.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
                     virtualDisplay?.release()
+                    virtualDisplay = null
                     imageReader?.close()
+                    imageReader = null
                     mediaProjection = null
                 }
             }, handler)
 
-            imageReader = ImageReader.newInstance(screenW, screenH, PixelFormat.RGBA_8888, 2)
+            val reader = ImageReader.newInstance(screenW, screenH, PixelFormat.RGBA_8888, 2)
+            reader.setOnImageAvailableListener({ r ->
+                val callback = pendingCaptureCallback
+                val image = r.acquireLatestImage()
+                if (image == null) return@setOnImageAvailableListener
+
+                if (callback == null) {
+                    image.close()
+                    return@setOnImageAvailableListener
+                }
+
+                // Immediately stop surface feed after grabbing 1 clean screenshot
+                pendingCaptureCallback = null
+                captureTimeoutRunnable?.let { handler.removeCallbacks(it) }
+                try {
+                    virtualDisplay?.setSurface(null)
+                } catch (_: Exception) {
+                }
+
+                val bmp = try {
+                    val planes = image.planes
+                    val buffer = planes[0].buffer
+                    val pixelStride = planes[0].pixelStride
+                    val rowStride = planes[0].rowStride
+                    val rowPadding = rowStride - pixelStride * screenW
+
+                    val fullBmp = Bitmap.createBitmap(
+                        screenW + rowPadding / pixelStride,
+                        screenH,
+                        Bitmap.Config.ARGB_8888
+                    )
+                    fullBmp.copyPixelsFromBuffer(buffer)
+                    val cleanW = screenW.coerceAtMost(fullBmp.width)
+                    val cleanH = screenH.coerceAtMost(fullBmp.height)
+                    val cleanBmp = Bitmap.createBitmap(fullBmp, 0, 0, cleanW, cleanH)
+                    if (cleanBmp !== fullBmp) fullBmp.recycle()
+                    cleanBmp
+                } catch (_: Exception) {
+                    null
+                } finally {
+                    image.close()
+                }
+
+                handler.post {
+                    bubbleView?.visibility = View.VISIBLE
+                    if (bmp != null) {
+                        callback(bmp)
+                    } else {
+                        Toast.makeText(this, "Capture failed, try again", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }, handler)
+            imageReader = reader
+
+            // Start idle with surface = null so it NEVER streams continuously
             virtualDisplay = projection.createVirtualDisplay(
                 "MedTechCapture",
                 screenW, screenH, screenDensity,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader?.surface, null, handler
+                null, null, handler
             )
         } catch (e: Exception) {
             e.printStackTrace()
@@ -183,15 +247,16 @@ class FloatingBubbleService : Service() {
 
         val sizePx = dpToPx(prefs.bubbleSizeDp)
         val type = getOverlayWindowType()
+        val initialEdgeX = if (prefs.bubbleX + sizePx / 2 < screenW / 2) 0 else (screenW - sizePx).coerceAtLeast(0)
 
         val params = WindowManager.LayoutParams(
             sizePx, sizePx, type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = prefs.bubbleX
-            y = prefs.bubbleY
+            x = initialEdgeX
+            y = prefs.bubbleY.coerceIn(0, (screenH - sizePx).coerceAtLeast(0))
         }
         bubbleParams = params
 
@@ -236,13 +301,14 @@ class FloatingBubbleService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - initialTouchX).toInt()
                     val dy = (event.rawY - initialTouchY).toInt()
-                    if (abs(dx) > 16 || abs(dy) > 16) {
+                    if (abs(dx) > 14 || abs(dy) > 14) {
                         isDragging = true
                         handler.removeCallbacks(longPressRunnable)
                         handler.removeCallbacks(singleTapRunnable)
                         tapCount = 0
-                        params.x = initialX + dx
-                        params.y = initialY + dy
+                        val curSize = params.width
+                        params.x = (initialX + dx).coerceIn(0, (screenW - curSize).coerceAtLeast(0))
+                        params.y = (initialY + dy).coerceIn(0, (screenH - curSize).coerceAtLeast(0))
                         windowManager.updateViewLayout(iv, params)
                     }
                     true
@@ -254,7 +320,6 @@ class FloatingBubbleService : Service() {
                     val duration = SystemClock.uptimeMillis() - touchDownTime
 
                     if (isDragging) {
-                        // Quick short flick gesture (when enabled) snaps bubble back & runs directional action
                         if (prefs.swipeGesturesEnabled && duration < 260 && (abs(dx) in 45f..240f || abs(dy) in 45f..240f)) {
                             params.x = initialX
                             params.y = initialY
@@ -268,9 +333,25 @@ class FloatingBubbleService : Service() {
                             }
                             executeAction(flickAction)
                         } else {
-                            // Standard drag to reposition bubble
-                            prefs.bubbleX = params.x
-                            prefs.bubbleY = params.y
+                            // Snap smoothly to left or right edge while keeping vertical position
+                            val curSize = params.width
+                            val targetX = if (params.x + curSize / 2 < screenW / 2) 0 else (screenW - curSize).coerceAtLeast(0)
+                            val targetY = params.y.coerceIn(0, (screenH - curSize).coerceAtLeast(0))
+                            params.y = targetY
+                            prefs.bubbleX = targetX
+                            prefs.bubbleY = targetY
+
+                            ValueAnimator.ofInt(params.x, targetX).apply {
+                                this.duration = 180
+                                interpolator = DecelerateInterpolator()
+                                addUpdateListener { anim ->
+                                    if (iv.isAttachedToWindow) {
+                                        params.x = anim.animatedValue as Int
+                                        windowManager.updateViewLayout(iv, params)
+                                    }
+                                }
+                                start()
+                            }
                         }
                     } else if (!longPressTriggered) {
                         tapCount++
@@ -294,18 +375,25 @@ class FloatingBubbleService : Service() {
     fun applyBubbleAppearance() {
         val iv = bubbleView ?: return
         val sizePx = dpToPx(prefs.bubbleSizeDp)
-        iv.alpha = prefs.bubbleOpacity / 100f
+        iv.alpha = (100 - prefs.bubbleTransparency) / 100f
 
         val customBmp = prefs.getCustomBubbleIcon()
         if (customBmp != null) {
             iv.setImageBitmap(getCircularBitmap(customBmp, sizePx))
         } else {
-            iv.setImageBitmap(createDefaultMedTechBubble(sizePx))
+            val launcherBmp = BitmapFactory.decodeResource(resources, R.drawable.ic_launcher)
+            if (launcherBmp != null) {
+                iv.setImageBitmap(getCircularBitmap(launcherBmp, sizePx))
+            } else {
+                iv.setImageBitmap(createDefaultMedTechBubble(sizePx))
+            }
         }
 
         bubbleParams?.let { params ->
             params.width = sizePx
             params.height = sizePx
+            params.x = if (params.x + sizePx / 2 < screenW / 2) 0 else (screenW - sizePx).coerceAtLeast(0)
+            params.y = params.y.coerceIn(0, (screenH - sizePx).coerceAtLeast(0))
             if (iv.isAttachedToWindow) {
                 windowManager.updateViewLayout(iv, params)
             }
@@ -318,11 +406,15 @@ class FloatingBubbleService : Service() {
 
         when (actionKey) {
             PrefsManager.ACT_SHOW_MENU -> showToolsMenu()
-            PrefsManager.ACT_CROP_COPY -> captureAndCrop { cropped ->
+            PrefsManager.ACT_SCREENSHOT -> captureScreenOnce(actionKey) { fullBmp ->
+                prefs.saveAndCopyImageToClipboard(fullBmp)
+                Toast.makeText(this, getString(R.string.copied_toast), Toast.LENGTH_SHORT).show()
+            }
+            PrefsManager.ACT_CROP_COPY -> captureAndCrop(actionKey) { cropped ->
                 prefs.saveAndCopyImageToClipboard(cropped)
                 Toast.makeText(this, getString(R.string.copied_toast), Toast.LENGTH_SHORT).show()
             }
-            PrefsManager.ACT_CROP_OCR -> captureAndCrop { cropped ->
+            PrefsManager.ACT_CROP_OCR -> captureAndCrop(actionKey) { cropped ->
                 runOfflineOcr(cropped) { extracted ->
                     if (extracted.isEmpty()) {
                         Toast.makeText(this, getString(R.string.ocr_empty), Toast.LENGTH_SHORT).show()
@@ -332,7 +424,7 @@ class FloatingBubbleService : Service() {
                     }
                 }
             }
-            PrefsManager.ACT_STYLUS_EDITOR -> captureAndCrop { cropped ->
+            PrefsManager.ACT_STYLUS_EDITOR -> captureAndCrop(actionKey) { cropped ->
                 val file = prefs.saveAndCopyImageToClipboard(cropped)
                 val intent = Intent(this, EditorActivity::class.java).apply {
                     putExtra("image_path", file.absolutePath)
@@ -340,15 +432,15 @@ class FloatingBubbleService : Service() {
                 }
                 startActivity(intent)
             }
-            PrefsManager.ACT_PIN_IMAGE -> captureAndCrop { cropped ->
+            PrefsManager.ACT_PIN_IMAGE -> captureAndCrop(actionKey) { cropped ->
                 showPinnedImage(cropped)
             }
             PrefsManager.ACT_CLIPBOARD -> showMiniClipboardOverlay()
-            PrefsManager.ACT_GOOGLE_SEARCH -> captureAndCrop { cropped ->
+            PrefsManager.ACT_GOOGLE_SEARCH -> captureAndCrop(actionKey) { cropped ->
                 val file = prefs.saveAndCopyImageToClipboard(cropped)
                 shareToGoogleSearch(file)
             }
-            PrefsManager.ACT_GOOGLE_TRANSLATE -> captureAndCrop { cropped ->
+            PrefsManager.ACT_GOOGLE_TRANSLATE -> captureAndCrop(actionKey) { cropped ->
                 runOfflineOcr(cropped) { extracted ->
                     val targetUrl = if (extracted.isNotEmpty()) {
                         prefs.copyTextToSystemClipboard(extracted)
@@ -371,43 +463,49 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun captureAndCrop(onResult: (Bitmap) -> Unit) {
-        if (mediaProjection == null || imageReader == null) {
+    private fun captureScreenOnce(pendingActionKey: String, onResult: (Bitmap) -> Unit) {
+        if (mediaProjection == null || virtualDisplay == null || imageReader == null) {
             startActivity(Intent(this, PermissionBridgeActivity::class.java).apply {
+                putExtra(PermissionBridgeActivity.EXTRA_PENDING_ACTION, pendingActionKey)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })
             return
         }
 
+        updateDisplayMetrics()
+        pendingCaptureCallback = onResult
         bubbleView?.visibility = View.INVISIBLE
-        handler.postDelayed({
-            val image = imageReader?.acquireLatestImage()
-            bubbleView?.visibility = View.VISIBLE
-            if (image == null) {
+
+        captureTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        val timeout = Runnable {
+            if (pendingCaptureCallback != null) {
+                pendingCaptureCallback = null
+                try {
+                    virtualDisplay?.setSurface(null)
+                } catch (_: Exception) {
+                }
+                bubbleView?.visibility = View.VISIBLE
                 Toast.makeText(this, "Tap again to capture", Toast.LENGTH_SHORT).show()
-                return@postDelayed
             }
-            val planes = image.planes
-            val buffer = planes[0].buffer
-            val pixelStride = planes[0].pixelStride
-            val rowStride = planes[0].rowStride
-            val rowPadding = rowStride - pixelStride * screenW
+        }
+        captureTimeoutRunnable = timeout
+        handler.postDelayed(timeout, 700)
 
-            val fullBmp = Bitmap.createBitmap(
-                screenW + rowPadding / pixelStride,
-                screenH,
-                Bitmap.Config.ARGB_8888
-            )
-            fullBmp.copyPixelsFromBuffer(buffer)
-            image.close()
+        handler.postDelayed({
+            try {
+                virtualDisplay?.setSurface(imageReader?.surface)
+                virtualDisplay?.resize(screenW, screenH, screenDensity)
+            } catch (e: Exception) {
+                pendingCaptureCallback = null
+                bubbleView?.visibility = View.VISIBLE
+            }
+        }, 90)
+    }
 
-            val cleanW = screenW.coerceAtMost(fullBmp.width)
-            val cleanH = screenH.coerceAtMost(fullBmp.height)
-            val cleanBmp = Bitmap.createBitmap(fullBmp, 0, 0, cleanW, cleanH)
-            if (cleanBmp !== fullBmp) fullBmp.recycle()
-
+    private fun captureAndCrop(pendingActionKey: String, onResult: (Bitmap) -> Unit) {
+        captureScreenOnce(pendingActionKey) { cleanBmp ->
             showCropOverlay(cleanBmp, onResult)
-        }, 110)
+        }
     }
 
     private fun showCropOverlay(screenshot: Bitmap, onResult: (Bitmap) -> Unit) {
@@ -483,15 +581,15 @@ class FloatingBubbleService : Service() {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F2171D24"))
+                setColor(Color.parseColor("#F50A1628"))
                 cornerRadius = dpToPx(18).toFloat()
-                setStroke(2, Color.parseColor("#00897B"))
+                setStroke(dpToPx(2), UiTheme.GOLD)
             }
         }
 
         val title = TextView(this).apply {
             text = "${getString(R.string.app_name)} • ${getString(R.string.app_tagline)}"
-            setTextColor(Color.parseColor("#00E5FF"))
+            setTextColor(UiTheme.GOLD_LIGHT)
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, dpToPx(8))
@@ -499,6 +597,7 @@ class FloatingBubbleService : Service() {
         container.addView(title)
 
         val orderedMenuKeys = listOf(
+            PrefsManager.ACT_SCREENSHOT to getString(R.string.tool_screenshot),
             PrefsManager.ACT_CROP_COPY to getString(R.string.tool_crop_copy),
             PrefsManager.ACT_STYLUS_EDITOR to getString(R.string.tool_stylus),
             PrefsManager.ACT_CROP_OCR to getString(R.string.tool_ocr),
@@ -514,9 +613,9 @@ class FloatingBubbleService : Service() {
             if (!prefs.isToolEnabled(key)) continue
             val btn = TextView(this).apply {
                 text = "• $label"
-                setTextColor(if (key == PrefsManager.ACT_EXIT) Color.parseColor("#FF5252") else Color.WHITE)
-                textSize = 14f
-                setPadding(dpToPx(8), dpToPx(10), dpToPx(8), dpToPx(10))
+                setTextColor(if (key == PrefsManager.ACT_EXIT) Color.parseColor("#EF5350") else UiTheme.TEXT_PRIMARY)
+                textSize = 14.5f
+                setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10))
                 setOnClickListener {
                     dismissMenu()
                     executeAction(key)
@@ -527,7 +626,7 @@ class FloatingBubbleService : Service() {
 
         val closeBtn = TextView(this).apply {
             text = "✕"
-            setTextColor(Color.LTGRAY)
+            setTextColor(UiTheme.GOLD_LIGHT)
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(0, dpToPx(8), 0, 0)
@@ -537,7 +636,7 @@ class FloatingBubbleService : Service() {
 
         menuView = container
         val params = WindowManager.LayoutParams(
-            dpToPx(260),
+            dpToPx(270),
             WindowManager.LayoutParams.WRAP_CONTENT,
             getOverlayWindowType(),
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
@@ -560,7 +659,7 @@ class FloatingBubbleService : Service() {
         pinnedView?.let { if (it.isAttachedToWindow) windowManager.removeView(it) }
 
         val frame = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#CC00897B"))
+            setBackgroundColor(UiTheme.GOLD)
             setPadding(5, 5, 5, 5)
         }
         val iv = ImageView(this).apply {
@@ -570,7 +669,7 @@ class FloatingBubbleService : Service() {
         val close = TextView(this).apply {
             text = "✕"
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#D32F2F"))
+            setBackgroundColor(UiTheme.DANGER_RED)
             setPadding(18, 8, 18, 8)
             setOnClickListener {
                 if (frame.isAttachedToWindow) windowManager.removeView(frame)
@@ -631,15 +730,15 @@ class FloatingBubbleService : Service() {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#F5171D24"))
+                setColor(Color.parseColor("#F50A1628"))
                 cornerRadius = dpToPx(18).toFloat()
-                setStroke(2, Color.parseColor("#00897B"))
+                setStroke(dpToPx(2), UiTheme.GOLD)
             }
         }
 
         val header = TextView(this).apply {
             text = getString(R.string.tool_clipboard)
-            setTextColor(Color.parseColor("#00E5FF"))
+            setTextColor(UiTheme.GOLD_LIGHT)
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, dpToPx(10))
@@ -665,6 +764,8 @@ class FloatingBubbleService : Service() {
             }
             val btnCopy = Button(this).apply {
                 text = "Copy"
+                setTextColor(UiTheme.TEXT_PRIMARY)
+                setBackgroundColor(UiTheme.ROYAL_BLUE)
                 setOnClickListener {
                     prefs.copyFileUriToSystemClipboard(file)
                     Toast.makeText(this@FloatingBubbleService, getString(R.string.copied_toast), Toast.LENGTH_SHORT).show()
@@ -672,6 +773,8 @@ class FloatingBubbleService : Service() {
             }
             val btnEdit = Button(this).apply {
                 text = "Edit"
+                setTextColor(UiTheme.BG_NAVY)
+                setBackgroundColor(UiTheme.GOLD)
                 setOnClickListener {
                     clipboardDialogView?.let { if (it.isAttachedToWindow) windowManager.removeView(it) }
                     clipboardDialogView = null
@@ -691,6 +794,8 @@ class FloatingBubbleService : Service() {
 
         val closeBtn = Button(this).apply {
             text = "✕"
+            setTextColor(UiTheme.GOLD_LIGHT)
+            setBackgroundColor(UiTheme.SURFACE_BLUE)
             setOnClickListener {
                 clipboardDialogView?.let { if (it.isAttachedToWindow) windowManager.removeView(it) }
                 clipboardDialogView = null
@@ -709,7 +814,6 @@ class FloatingBubbleService : Service() {
         windowManager.addView(root, params)
     }
 
-    // Native Kotlin Full Process & Service Shutdown
     fun forceExitEverything() {
         isRunning = false
         handler.removeCallbacksAndMessages(null)
@@ -768,11 +872,17 @@ class FloatingBubbleService : Service() {
     private fun createDefaultMedTechBubble(size: Int): Bitmap {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#00897B") }
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = UiTheme.ROYAL_BLUE }
         c.drawCircle(size / 2f, size / 2f, size / 2f, p)
+        val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = UiTheme.GOLD
+            style = Paint.Style.STROKE
+            strokeWidth = size * 0.07f
+        }
+        c.drawCircle(size / 2f, size / 2f, size * 0.45f, ring)
         val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            strokeWidth = size * 0.12f
+            color = UiTheme.GOLD_LIGHT
+            strokeWidth = size * 0.11f
             strokeCap = Paint.Cap.ROUND
         }
         val pad = size * 0.28f

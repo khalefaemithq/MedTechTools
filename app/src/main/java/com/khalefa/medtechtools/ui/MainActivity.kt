@@ -2,10 +2,10 @@ package com.khalefa.medtechtools.ui
 
 import android.content.Intent
 import android.graphics.BitmapFactory
-import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,87 +41,78 @@ class MainActivity : AppCompatActivity() {
         applySavedLocale()
         super.onCreate(savedInstanceState)
 
-        // Enforce Ethical & Islamic Compliance Terms Gate on First Launch
         if (!prefs.termsAccepted) {
             startActivity(Intent(this, TermsActivity::class.java))
             finish()
             return
         }
 
-        val scroll = ScrollView(this)
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(UiTheme.BG_NAVY)
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(36, 36, 36, 56)
+            val p = UiTheme.dp(this@MainActivity, 16)
+            setPadding(p, UiTheme.dp(this@MainActivity, 20), p, UiTheme.dp(this@MainActivity, 32))
         }
 
-        // App Title, Tagline ("أداة كل الطلاب") & Developer Info
-        root.addView(TextView(this).apply {
+        // 1. Header Card (App Icon, Name, Tagline, Developer)
+        val headerCard = UiTheme.createCard(this, goldBorder = true).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        val logoIv = ImageView(this).apply {
+            setImageResource(R.drawable.ic_launcher)
+            val sz = UiTheme.dp(this@MainActivity, 72)
+            layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
+                bottomMargin = UiTheme.dp(this@MainActivity, 10)
+            }
+        }
+        headerCard.addView(logoIv)
+        headerCard.addView(TextView(this).apply {
             text = getString(R.string.app_name)
-            textSize = 23f
+            textSize = 21f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#00897B"))
+            setTextColor(UiTheme.GOLD_LIGHT)
+            gravity = Gravity.CENTER
         })
-        root.addView(TextView(this).apply {
+        headerCard.addView(TextView(this).apply {
             text = getString(R.string.app_tagline)
-            textSize = 16f
+            textSize = 15f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#00BFA5"))
+            setTextColor(UiTheme.BRIGHT_BLUE)
+            gravity = Gravity.CENTER
             setPadding(0, 4, 0, 4)
         })
-        root.addView(TextView(this).apply {
+        headerCard.addView(TextView(this).apply {
             text = getString(R.string.subtitle_dev)
             textSize = 13f
-            setPadding(0, 2, 0, 14)
+            setTextColor(UiTheme.TEXT_MUTED)
+            gravity = Gravity.CENTER
         })
+        root.addView(headerCard)
 
-        // Telegram Channel & Terms Buttons
-        root.addView(Button(this).apply {
-            text = getString(R.string.telegram_channel)
-            setOnClickListener {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/KhalefaTechMed")))
-            }
+        // 2. Service Controls Card
+        val controlCard = UiTheme.createCard(this, goldBorder = false)
+        controlCard.addView(UiTheme.goldButton(this, getString(R.string.start_bubble), topMarginDp = 0) {
+            startActivity(Intent(this@MainActivity, PermissionBridgeActivity::class.java))
         })
-
-        root.addView(Button(this).apply {
-            text = getString(R.string.view_terms_btn)
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, TermsActivity::class.java).apply {
-                    putExtra("view_only", true)
-                })
-            }
+        controlCard.addView(UiTheme.primaryButton(this, getString(R.string.stop_bubble), topMarginDp = 10) {
+            stopService(Intent(this@MainActivity, FloatingBubbleService::class.java))
+            Toast.makeText(this@MainActivity, getString(R.string.stop_bubble), Toast.LENGTH_SHORT).show()
         })
-
-        // Service Controls: Start, Stop, Native Kotlin Force Exit
-        root.addView(Button(this).apply {
-            text = getString(R.string.start_bubble)
-            setBackgroundColor(Color.parseColor("#00897B"))
-            setTextColor(Color.WHITE)
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, PermissionBridgeActivity::class.java))
-            }
+        controlCard.addView(UiTheme.secondaryButton(this, getString(R.string.telegram_channel), topMarginDp = 10) {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/KhalefaTechMed")))
         })
-
-        root.addView(Button(this).apply {
-            text = getString(R.string.stop_bubble)
-            setOnClickListener {
-                stopService(Intent(this@MainActivity, FloatingBubbleService::class.java))
-                Toast.makeText(this@MainActivity, getString(R.string.stop_bubble), Toast.LENGTH_SHORT).show()
-            }
+        controlCard.addView(UiTheme.secondaryButton(this, getString(R.string.view_terms_btn), topMarginDp = 8) {
+            startActivity(Intent(this@MainActivity, TermsActivity::class.java).apply {
+                putExtra("view_only", true)
+            })
         })
+        root.addView(controlCard)
 
-        root.addView(Button(this).apply {
-            text = getString(R.string.exit_app)
-            setBackgroundColor(Color.parseColor("#C62828"))
-            setTextColor(Color.WHITE)
-            setOnClickListener {
-                stopService(Intent(this@MainActivity, FloatingBubbleService::class.java))
-                finishAffinity()
-                exitProcess(0)
-            }
-        })
-
-        // Display Language Switcher
-        addSectionHeader(root, getString(R.string.language_label))
+        // 3. Display Language Card
+        val langCard = UiTheme.createCard(this, goldBorder = false)
+        addSectionHeader(langCard, getString(R.string.language_label), topPad = 0)
         val langSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@MainActivity,
@@ -150,18 +141,26 @@ class MainActivity : AppCompatActivity() {
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
         }
-        root.addView(langSpinner)
+        langCard.addView(langSpinner)
+        root.addView(langCard)
 
-        // Floating Bubble Size, Opacity & Custom Icon
-        addSectionHeader(root, getString(R.string.bubble_settings))
-        root.addView(TextView(this).apply { text = getString(R.string.bubble_size) })
-        root.addView(SeekBar(this).apply {
+        // 4. Floating Bubble Size & Logical Transparency Card
+        val bubbleCard = UiTheme.createCard(this, goldBorder = false)
+        addSectionHeader(bubbleCard, getString(R.string.bubble_settings), topPad = 0)
+
+        val sizeLabel = TextView(this).apply {
+            text = "${getString(R.string.bubble_size)}: ${prefs.bubbleSizeDp} dp"
+            setTextColor(UiTheme.TEXT_PRIMARY)
+        }
+        bubbleCard.addView(sizeLabel)
+        bubbleCard.addView(SeekBar(this).apply {
             max = 60
             progress = prefs.bubbleSizeDp - 36
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
                     if (u) {
                         prefs.bubbleSizeDp = p + 36
+                        sizeLabel.text = "${getString(R.string.bubble_size)}: ${prefs.bubbleSizeDp} dp"
                         refreshBubbleService()
                     }
                 }
@@ -170,14 +169,21 @@ class MainActivity : AppCompatActivity() {
             })
         })
 
-        root.addView(TextView(this).apply { text = getString(R.string.bubble_opacity) })
-        root.addView(SeekBar(this).apply {
+        // Logical Transparency Slider: 0% = Solid, 80% = Very Transparent
+        val transLabel = TextView(this).apply {
+            text = "${getString(R.string.bubble_transparency)}: ${prefs.bubbleTransparency}%"
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setPadding(0, UiTheme.dp(this@MainActivity, 10), 0, 0)
+        }
+        bubbleCard.addView(transLabel)
+        bubbleCard.addView(SeekBar(this).apply {
             max = 80
-            progress = prefs.bubbleOpacity - 20
+            progress = prefs.bubbleTransparency
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, u: Boolean) {
                     if (u) {
-                        prefs.bubbleOpacity = p + 20
+                        prefs.bubbleTransparency = p
+                        transLabel.text = "${getString(R.string.bubble_transparency)}: $p%"
                         refreshBubbleService()
                     }
                 }
@@ -186,28 +192,27 @@ class MainActivity : AppCompatActivity() {
             })
         })
 
-        root.addView(Button(this).apply {
-            text = getString(R.string.pick_bubble_icon)
-            setOnClickListener { pickIconLauncher.launch("image/*") }
+        bubbleCard.addView(UiTheme.primaryButton(this, getString(R.string.pick_bubble_icon), topMarginDp = 12) {
+            pickIconLauncher.launch("image/*")
         })
-        root.addView(Button(this).apply {
-            text = getString(R.string.reset_bubble_icon)
-            setOnClickListener {
-                prefs.clearCustomBubbleIcon()
-                refreshBubbleService()
-            }
+        bubbleCard.addView(UiTheme.secondaryButton(this, getString(R.string.reset_bubble_icon), topMarginDp = 8) {
+            prefs.clearCustomBubbleIcon()
+            refreshBubbleService()
         })
+        root.addView(bubbleCard)
 
-        // Triple-Tap Behavior & Optional 4-Way Flick Gestures
-        addSectionHeader(root, getString(R.string.triple_actions))
+        // 5. Triple-Tap Behavior & Optional 4-Way Flick Gestures Card
+        val actionsCard = UiTheme.createCard(this, goldBorder = false)
+        addSectionHeader(actionsCard, getString(R.string.triple_actions), topPad = 0)
         val actionNames = PrefsManager.ALL_ACTIONS.map { getActionDisplayName(it) }
 
-        fun addActionPicker(label: String, currentKey: String, onSave: (String) -> Unit) {
-            root.addView(TextView(this).apply {
+        fun addActionPicker(parent: LinearLayout, label: String, currentKey: String, onSave: (String) -> Unit) {
+            parent.addView(TextView(this).apply {
                 text = label
+                setTextColor(UiTheme.GOLD_LIGHT)
                 setPadding(0, 10, 0, 2)
             })
-            root.addView(Spinner(this).apply {
+            parent.addView(Spinner(this).apply {
                 adapter = ArrayAdapter(
                     this@MainActivity,
                     android.R.layout.simple_spinner_dropdown_item,
@@ -223,9 +228,9 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
-        addActionPicker(getString(R.string.single_tap), prefs.singleTapAction) { prefs.singleTapAction = it }
-        addActionPicker(getString(R.string.double_tap), prefs.doubleTapAction) { prefs.doubleTapAction = it }
-        addActionPicker(getString(R.string.long_press), prefs.longPressAction) { prefs.longPressAction = it }
+        addActionPicker(actionsCard, getString(R.string.single_tap), prefs.singleTapAction) { prefs.singleTapAction = it }
+        addActionPicker(actionsCard, getString(R.string.double_tap), prefs.doubleTapAction) { prefs.doubleTapAction = it }
+        addActionPicker(actionsCard, getString(R.string.long_press), prefs.longPressAction) { prefs.longPressAction = it }
 
         val swipeContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -234,69 +239,58 @@ class MainActivity : AppCompatActivity() {
 
         val swipeToggle = CheckBox(this).apply {
             text = getString(R.string.enable_swipe_gestures)
+            setTextColor(UiTheme.TEXT_PRIMARY)
             isChecked = prefs.swipeGesturesEnabled
             setOnCheckedChangeListener { _, checked ->
                 prefs.swipeGesturesEnabled = checked
                 swipeContainer.visibility = if (checked) View.VISIBLE else View.GONE
             }
         }
-        root.addView(swipeToggle)
+        actionsCard.addView(swipeToggle)
 
-        fun addSwipeActionPicker(label: String, currentKey: String, onSave: (String) -> Unit) {
-            swipeContainer.addView(TextView(this).apply {
-                text = label
-                setPadding(0, 8, 0, 2)
-            })
-            swipeContainer.addView(Spinner(this).apply {
-                adapter = ArrayAdapter(
-                    this@MainActivity,
-                    android.R.layout.simple_spinner_dropdown_item,
-                    actionNames
-                )
-                setSelection(PrefsManager.ALL_ACTIONS.indexOf(currentKey).coerceAtLeast(0))
-                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                        onSave(PrefsManager.ALL_ACTIONS[pos])
-                    }
-                    override fun onNothingSelected(p: AdapterView<*>?) {}
-                }
-            })
-        }
+        addActionPicker(swipeContainer, getString(R.string.swipe_up), prefs.swipeUpAction) { prefs.swipeUpAction = it }
+        addActionPicker(swipeContainer, getString(R.string.swipe_down), prefs.swipeDownAction) { prefs.swipeDownAction = it }
+        addActionPicker(swipeContainer, getString(R.string.swipe_left), prefs.swipeLeftAction) { prefs.swipeLeftAction = it }
+        addActionPicker(swipeContainer, getString(R.string.swipe_right), prefs.swipeRightAction) { prefs.swipeRightAction = it }
+        actionsCard.addView(swipeContainer)
+        root.addView(actionsCard)
 
-        addSwipeActionPicker(getString(R.string.swipe_up), prefs.swipeUpAction) { prefs.swipeUpAction = it }
-        addSwipeActionPicker(getString(R.string.swipe_down), prefs.swipeDownAction) { prefs.swipeDownAction = it }
-        addSwipeActionPicker(getString(R.string.swipe_left), prefs.swipeLeftAction) { prefs.swipeLeftAction = it }
-        addSwipeActionPicker(getString(R.string.swipe_right), prefs.swipeRightAction) { prefs.swipeRightAction = it }
-        root.addView(swipeContainer)
-
-        // Tools Visibility Checkboxes
-        addSectionHeader(root, getString(R.string.visible_tools))
+        // 6. Tools Visibility Card
+        val visibilityCard = UiTheme.createCard(this, goldBorder = false)
+        addSectionHeader(visibilityCard, getString(R.string.visible_tools), topPad = 0)
         val menuTools = PrefsManager.ALL_ACTIONS.filter {
             it != PrefsManager.ACT_NONE && it != PrefsManager.ACT_SHOW_MENU
         }
         for (key in menuTools) {
-            root.addView(CheckBox(this).apply {
+            visibilityCard.addView(CheckBox(this).apply {
                 text = getActionDisplayName(key)
+                setTextColor(UiTheme.TEXT_PRIMARY)
                 isChecked = prefs.isToolEnabled(key)
                 setOnCheckedChangeListener { _, checked -> prefs.setToolEnabled(key, checked) }
             })
         }
+        root.addView(visibilityCard)
 
-        // Quick Launch Buttons for AI Chat & Stylus Studio
-        addSectionHeader(root, "Quick Launch")
-        root.addView(Button(this).apply {
-            text = getString(R.string.tool_ai_chat)
-            setOnClickListener { startActivity(Intent(this@MainActivity, AiChatActivity::class.java)) }
+        // 7. Quick Launch Card
+        val quickCard = UiTheme.createCard(this, goldBorder = false)
+        addSectionHeader(quickCard, "Quick Launch", topPad = 0)
+        quickCard.addView(UiTheme.primaryButton(this, getString(R.string.tool_ai_chat), topMarginDp = 4) {
+            startActivity(Intent(this@MainActivity, AiChatActivity::class.java))
         })
-        root.addView(Button(this).apply {
-            text = getString(R.string.tool_stylus)
-            setOnClickListener {
-                if (prefs.getLatestClipFile() != null) {
-                    startActivity(Intent(this@MainActivity, EditorActivity::class.java))
-                } else {
-                    Toast.makeText(this@MainActivity, "Capture a screenshot clip first", Toast.LENGTH_SHORT).show()
-                }
+        quickCard.addView(UiTheme.secondaryButton(this, getString(R.string.tool_stylus), topMarginDp = 8) {
+            if (prefs.getLatestClipFile() != null) {
+                startActivity(Intent(this@MainActivity, EditorActivity::class.java))
+            } else {
+                Toast.makeText(this@MainActivity, "Capture a screenshot first", Toast.LENGTH_SHORT).show()
             }
+        })
+        root.addView(quickCard)
+
+        // 8. Exit Only Button at the Very Bottom
+        root.addView(UiTheme.dangerButton(this, getString(R.string.exit_app), topMarginDp = 6) {
+            stopService(Intent(this@MainActivity, FloatingBubbleService::class.java))
+            finishAffinity()
+            exitProcess(0)
         })
 
         scroll.addView(root)
@@ -305,6 +299,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun getActionDisplayName(key: String): String = when (key) {
         PrefsManager.ACT_NONE -> getString(R.string.tool_none)
+        PrefsManager.ACT_SCREENSHOT -> getString(R.string.tool_screenshot)
         PrefsManager.ACT_CROP_COPY -> getString(R.string.tool_crop_copy)
         PrefsManager.ACT_SHOW_MENU -> getString(R.string.tool_show_menu)
         PrefsManager.ACT_CROP_OCR -> getString(R.string.tool_ocr)
@@ -318,13 +313,13 @@ class MainActivity : AppCompatActivity() {
         else -> key
     }
 
-    private fun addSectionHeader(parent: LinearLayout, title: String) {
+    private fun addSectionHeader(parent: LinearLayout, title: String, topPad: Int = 20) {
         parent.addView(TextView(this).apply {
             text = title
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#00897B"))
-            setPadding(0, 28, 0, 8)
+            setTextColor(UiTheme.GOLD_LIGHT)
+            setPadding(0, topPad, 0, UiTheme.dp(this@MainActivity, 8))
         })
     }
 

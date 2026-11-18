@@ -15,6 +15,7 @@ class PrefsManager(private val context: Context) {
 
     companion object {
         const val ACT_NONE = "none"
+        const val ACT_SCREENSHOT = "screenshot"
         const val ACT_CROP_COPY = "crop_copy"
         const val ACT_SHOW_MENU = "show_menu"
         const val ACT_CROP_OCR = "crop_ocr"
@@ -28,6 +29,7 @@ class PrefsManager(private val context: Context) {
 
         val ALL_ACTIONS = listOf(
             ACT_NONE,
+            ACT_SCREENSHOT,
             ACT_CROP_COPY,
             ACT_SHOW_MENU,
             ACT_CROP_OCR,
@@ -41,7 +43,6 @@ class PrefsManager(private val context: Context) {
         )
     }
 
-    // Terms Acceptance & Future Academic Specialty Filter Readiness
     var termsAccepted: Boolean
         get() = prefs.getBoolean("terms_accepted_v1", false)
         set(value) = prefs.edit().putBoolean("terms_accepted_v1", value).apply()
@@ -58,12 +59,13 @@ class PrefsManager(private val context: Context) {
         get() = prefs.getInt("bubble_size", 56)
         set(value) = prefs.edit().putInt("bubble_size", value.coerceIn(36, 96)).apply()
 
-    var bubbleOpacity: Int
-        get() = prefs.getInt("bubble_opacity", 85)
-        set(value) = prefs.edit().putInt("bubble_opacity", value.coerceIn(20, 100)).apply()
+    // Logical Transparency: 0% = fully solid (alpha 1.0), 80% = very transparent (alpha 0.2)
+    var bubbleTransparency: Int
+        get() = prefs.getInt("bubble_transparency", 15)
+        set(value) = prefs.edit().putInt("bubble_transparency", value.coerceIn(0, 80)).apply()
 
     var bubbleX: Int
-        get() = prefs.getInt("bubble_x", 24)
+        get() = prefs.getInt("bubble_x", 0)
         set(value) = prefs.edit().putInt("bubble_x", value).apply()
 
     var bubbleY: Int
@@ -71,12 +73,12 @@ class PrefsManager(private val context: Context) {
         set(value) = prefs.edit().putInt("bubble_y", value).apply()
 
     // Triple-Tap Customizable Defaults:
-    // 1. Single Tap -> Instant Crop & Copy Screenshot
+    // 1. Single Tap -> Instant Screenshot to Private Clipboard
     // 2. Double Tap -> Crop & Extract Text (OCR)
     // 3. Long Press -> Show Customizable Tools Menu
     var singleTapAction: String
-        get() = prefs.getString("act_single", ACT_CROP_COPY) ?: ACT_CROP_COPY
-        set(value) = prefs.edit().putString("act_single", value).apply()
+        get() = prefs.getString("act_single_v11", ACT_SCREENSHOT) ?: ACT_SCREENSHOT
+        set(value) = prefs.edit().putString("act_single_v11", value).apply()
 
     var doubleTapAction: String
         get() = prefs.getString("act_double", ACT_CROP_OCR) ?: ACT_CROP_OCR
@@ -86,7 +88,6 @@ class PrefsManager(private val context: Context) {
         get() = prefs.getString("act_long", ACT_SHOW_MENU) ?: ACT_SHOW_MENU
         set(value) = prefs.edit().putString("act_long", value).apply()
 
-    // Optional 4-Way Bubble Flick Gestures (Works via OnTouchListener without Accessibility permission)
     var swipeGesturesEnabled: Boolean
         get() = prefs.getBoolean("swipe_gestures_enabled", false)
         set(value) = prefs.edit().putBoolean("swipe_gestures_enabled", value).apply()
@@ -108,15 +109,15 @@ class PrefsManager(private val context: Context) {
         set(value) = prefs.edit().putString("act_swipe_right", value).apply()
 
     fun isToolEnabled(actionKey: String): Boolean {
+
         if (actionKey == ACT_NONE || actionKey == ACT_SHOW_MENU) return false
-        return prefs.getBoolean("tool_enabled_$actionKey", true)
+|---|prefs.getBoolean("tool_enabled_$actionKey", true)
     }
 
     fun setToolEnabled(actionKey: String, enabled: Boolean) {
         prefs.edit().putBoolean("tool_enabled_$actionKey", enabled).apply()
     }
 
-    // AI Assistant API Configuration (OpenAI-Compatible)
     var aiBaseUrl: String
         get() = prefs.getString("ai_base_url", "https://openrouter.ai/api/v1/chat/completions")
             ?: "https://openrouter.ai/api/v1/chat/completions"
@@ -131,11 +132,10 @@ class PrefsManager(private val context: Context) {
             ?: "google/gemini-2.0-flash-001"
         set(value) = prefs.edit().putString("ai_model", value.trim()).apply()
 
-    // Custom Bubble Icon Storage (Private internal storage, hidden from Gallery)
     fun saveCustomBubbleIcon(bitmap: Bitmap) {
         val file = File(context.filesDir, "custom_bubble.png")
         FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            bitmap.compress(Bitmap.CompressFormat.PNG, 95, out)
         }
     }
 
@@ -149,7 +149,6 @@ class PrefsManager(private val context: Context) {
         if (file.exists()) file.delete()
     }
 
-    // Private Mini Clipboard (Hidden from Gallery)
     fun getClipboardDir(): File {
         val dir = File(context.filesDir, "clipboard")
         if (!dir.exists()) {
@@ -171,7 +170,6 @@ class PrefsManager(private val context: Context) {
         FileOutputStream(file).use { out ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
         }
-        // Keep only the latest 15 image clips to stay lightweight
         val files = dir.listFiles { f -> f.name.endsWith(".png") }
             ?.sortedByDescending { it.lastModified() } ?: emptyList()
         if (files.size > 15) {

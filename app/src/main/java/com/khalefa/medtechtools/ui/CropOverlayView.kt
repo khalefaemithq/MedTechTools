@@ -14,27 +14,27 @@ class CropOverlayView(
 ) : View(context) {
 
     private val dimPaint = Paint().apply {
-        color = Color.parseColor("#99000000")
+        color = Color.parseColor("#99050D1A")
     }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#00E5FF")
+        color = Color.parseColor("#D4AF37")
         style = Paint.Style.STROKE
         strokeWidth = 5f
     }
     private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#5500E5FF")
+        color = Color.parseColor("#66D4AF37")
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
     private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#00E5FF")
+        color = Color.parseColor("#FFD54F")
         style = Paint.Style.FILL
     }
     private val btnConfirmPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#00897B")
+        color = Color.parseColor("#1565C0")
     }
     private val btnCancelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#D32F2F")
+        color = Color.parseColor("#B71C1C")
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -70,13 +70,11 @@ class CropOverlayView(
 
         canvas.drawBitmap(screenshot, null, destFullRect, null)
 
-        // Dim area outside the crop selection
         canvas.drawRect(0f, 0f, width.toFloat(), cropRect.top, dimPaint)
         canvas.drawRect(0f, cropRect.bottom, width.toFloat(), height.toFloat(), dimPaint)
         canvas.drawRect(0f, cropRect.top, cropRect.left, cropRect.bottom, dimPaint)
         canvas.drawRect(cropRect.right, cropRect.top, width.toFloat(), cropRect.bottom, dimPaint)
 
-        // Rule-of-thirds inner grid
         val thirdW = cropRect.width() / 3f
         val thirdH = cropRect.height() / 3f
         canvas.drawLine(cropRect.left + thirdW, cropRect.top, cropRect.left + thirdW, cropRect.bottom, gridPaint)
@@ -84,7 +82,6 @@ class CropOverlayView(
         canvas.drawLine(cropRect.left, cropRect.top + thirdH, cropRect.right, cropRect.top + thirdH, gridPaint)
         canvas.drawLine(cropRect.left, cropRect.top + thirdH * 2, cropRect.right, cropRect.top + thirdH * 2, gridPaint)
 
-        // Border & Corner handles
         canvas.drawRect(cropRect, borderPaint)
         val r = 20f
         canvas.drawCircle(cropRect.left, cropRect.top, r, handlePaint)
@@ -92,7 +89,6 @@ class CropOverlayView(
         canvas.drawCircle(cropRect.left, cropRect.bottom, r, handlePaint)
         canvas.drawCircle(cropRect.right, cropRect.bottom, r, handlePaint)
 
-        // Floating Confirm / Cancel buttons
         val btnW = 210f
         val btnH = 88f
         val btnTop = if (cropRect.bottom + btnH + 30f < height) {
@@ -182,8 +178,9 @@ class CropOverlayView(
     }
 
     private fun performCrop() {
+
         if (width <= 0 || height <= 0) {
-            onCancel()
+|---|
             return
         }
         val scaleX = screenshot.width.toFloat() / width.toFloat()

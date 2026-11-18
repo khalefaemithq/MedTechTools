@@ -1,6 +1,9 @@
 <resources>
-    <style name="Theme.MedTechTools" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">#00897B</item>
-        <item name="colorSecondary">#00BFA5</item>
+    <style name="Theme.MedTechTools" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#1565C0</item>
+        <item name="colorSecondary">#D4AF37</item>
+        <item name="android:statusBarColor">#0A1628</item>
+        <item name="android:navigationBarColor">#0A1628</item>
+        <item name="android:windowBackground">#0A1628</item>
     </style>
 </resources>

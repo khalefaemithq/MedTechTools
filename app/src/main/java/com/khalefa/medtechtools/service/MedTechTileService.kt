@@ -21,13 +21,11 @@ class MedTechTileService : TileService() {
         super.onClick()
         val prefs = PrefsManager(this)
 
-        // Enforce Ethical Terms acceptance before first use
         if (!prefs.termsAccepted) {
             launchActivityFromTile(Intent(this, TermsActivity::class.java), 10)
             return
         }
 
-        // Check Overlay Permission first
         if (!Settings.canDrawOverlays(this)) {
             launchActivityFromTile(Intent(this, PermissionBridgeActivity::class.java), 11)
             return

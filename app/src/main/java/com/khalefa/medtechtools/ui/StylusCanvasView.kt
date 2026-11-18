@@ -15,14 +15,15 @@ class StylusCanvasView(context: Context, private val baseBitmap: Bitmap) : View(
 
     var currentColor: Int = Color.parseColor("#E53935")
     var strokeWidthPx: Float = 8f
-    var stylusOnlyMode: Boolean = false // Hardware Palm Rejection Toggle
+    var stylusOnlyMode: Boolean = false
 
     private val destRect = RectF()
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (width <= 0 || height <= 0 || baseBitmap.isRecycled) return
 
+        if (width <= 0 || height <= 0 || baseBitmap.isRecycled) return
+|---|---|---|
         val scale = minOf(width.toFloat() / baseBitmap.width, height.toFloat() / baseBitmap.height)
         val drawW = baseBitmap.width * scale
         val drawH = baseBitmap.height * scale
@@ -40,7 +41,6 @@ class StylusCanvasView(context: Context, private val baseBitmap: Bitmap) : View(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Hardware Stylus Check (Palm Rejection when Stylus-Only Mode is active)
         if (stylusOnlyMode && event.getToolType(0) != MotionEvent.TOOL_TYPE_STYLUS) {
             return false
         }

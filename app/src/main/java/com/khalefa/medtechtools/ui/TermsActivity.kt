@@ -1,12 +1,9 @@
 package com.khalefa.medtechtools.ui
 
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -38,31 +35,24 @@ class TermsActivity : AppCompatActivity() {
         })
 
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor("#0F1419"))
+            setBackgroundColor(UiTheme.BG_NAVY)
             isFillViewport = true
         }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(40, 48, 40, 48)
+            val p = UiTheme.dp(this@TermsActivity, 20)
+            setPadding(p, p, p, p)
         }
 
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(36, 40, 36, 40)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#1A222B"))
-                cornerRadius = 28f
-                setStroke(2, Color.parseColor("#00897B"))
-            }
-        }
+        val card = UiTheme.createCard(this, goldBorder = true)
 
         val titleView = TextView(this).apply {
             text = getString(R.string.app_name)
             textSize = 22f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#00E5FF"))
+            setTextColor(UiTheme.GOLD_LIGHT)
             gravity = Gravity.CENTER
         }
 
@@ -70,33 +60,33 @@ class TermsActivity : AppCompatActivity() {
             text = getString(R.string.app_tagline)
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#80CBC4"))
+            setTextColor(UiTheme.BRIGHT_BLUE)
             gravity = Gravity.CENTER
-            setPadding(0, 6, 0, 24)
+            setPadding(0, 6, 0, 20)
         }
 
         val termsHeader = TextView(this).apply {
             text = getString(R.string.terms_title)
-            textSize = 18f
+            textSize = 17f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            setPadding(0, 0, 0, 16)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setPadding(0, 0, 0, 12)
         }
 
         val termsBody = TextView(this).apply {
             text = getString(R.string.terms_body)
-            textSize = 15f
+            textSize = 14.5f
             setLineSpacing(8f, 1.15f)
-            setTextColor(Color.parseColor("#E0E6ED"))
-            setPadding(0, 0, 0, 28)
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setPadding(0, 0, 0, 22)
         }
 
         val devFooter = TextView(this).apply {
             text = getString(R.string.subtitle_dev)
             textSize = 13f
-            setTextColor(Color.parseColor("#90A4AE"))
+            setTextColor(UiTheme.TEXT_MUTED)
             gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 24)
+            setPadding(0, 0, 0, 16)
         }
 
         card.addView(titleView)
@@ -106,42 +96,17 @@ class TermsActivity : AppCompatActivity() {
         card.addView(devFooter)
 
         if (viewOnlyMode) {
-            val closeBtn = Button(this).apply {
-                text = "OK"
-                setBackgroundColor(Color.parseColor("#00897B"))
-                setTextColor(Color.WHITE)
-                setOnClickListener { finish() }
-            }
-            card.addView(closeBtn)
+            card.addView(UiTheme.goldButton(this, "OK", topMarginDp = 4) { finish() })
         } else {
-            val agreeBtn = Button(this).apply {
-                text = getString(R.string.terms_agree_btn)
-                setBackgroundColor(Color.parseColor("#00897B"))
-                setTextColor(Color.WHITE)
-                setOnClickListener {
-                    prefs.termsAccepted = true
-                    startActivity(Intent(this@TermsActivity, MainActivity::class.java))
-                    finish()
-                }
-            }
-
-            val declineBtn = Button(this).apply {
-                text = getString(R.string.terms_decline_btn)
-                setBackgroundColor(Color.parseColor("#B71C1C"))
-                setTextColor(Color.WHITE)
-                val lp = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = 16 }
-                layoutParams = lp
-                setOnClickListener {
-                    finishAffinity()
-                    exitProcess(0)
-                }
-            }
-
-            card.addView(agreeBtn)
-            card.addView(declineBtn)
+            card.addView(UiTheme.goldButton(this, getString(R.string.terms_agree_btn), topMarginDp = 4) {
+                prefs.termsAccepted = true
+                startActivity(Intent(this@TermsActivity, MainActivity::class.java))
+                finish()
+            })
+            card.addView(UiTheme.dangerButton(this, getString(R.string.terms_decline_btn), topMarginDp = 10) {
+                finishAffinity()
+                exitProcess(0)
+            })
         }
 
         root.addView(card)

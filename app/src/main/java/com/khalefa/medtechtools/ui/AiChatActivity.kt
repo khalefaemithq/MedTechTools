@@ -1,6 +1,5 @@
 package com.khalefa.medtechtools.ui
 
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
 import android.util.Base64
@@ -31,43 +30,53 @@ class AiChatActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
+            setBackgroundColor(UiTheme.BG_NAVY)
+            val p = UiTheme.dp(this@AiChatActivity, 16)
+            setPadding(p, p, p, p)
         }
 
         val header = TextView(this).apply {
             text = "${getString(R.string.app_name)} • AI Assistant"
             textSize = 18f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#00897B"))
+            setTextColor(UiTheme.GOLD_LIGHT)
             setPadding(0, 0, 0, 12)
         }
 
+        val apiCard = UiTheme.createCard(this, goldBorder = false)
         val urlInput = EditText(this).apply {
-            hint = "API Endpoint URL (e.g. OpenRouter / Groq / OpenAI)"
+            hint = "API Endpoint URL"
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setHintTextColor(UiTheme.TEXT_MUTED)
             setText(prefs.aiBaseUrl)
         }
         val keyInput = EditText(this).apply {
             hint = "API Key (sk-...)"
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setHintTextColor(UiTheme.TEXT_MUTED)
             setText(prefs.aiApiKey)
         }
         val modelInput = EditText(this).apply {
-            hint = "Model Name (e.g. google/gemini-2.0-flash-001)"
+            hint = "Model Name"
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setHintTextColor(UiTheme.TEXT_MUTED)
             setText(prefs.aiModel)
         }
-
-        val btnSaveApi = Button(this).apply {
-            text = "Save API Settings"
-            setOnClickListener {
-                prefs.aiBaseUrl = urlInput.text.toString()
-                prefs.aiApiKey = keyInput.text.toString()
-                prefs.aiModel = modelInput.text.toString()
-                Toast.makeText(this@AiChatActivity, "API Settings Saved", Toast.LENGTH_SHORT).show()
-            }
+        val btnSaveApi = UiTheme.secondaryButton(this, "Save API Settings", topMarginDp = 6) {
+            prefs.aiBaseUrl = urlInput.text.toString()
+            prefs.aiApiKey = keyInput.text.toString()
+            prefs.aiModel = modelInput.text.toString()
+            Toast.makeText(this@AiChatActivity, "API Settings Saved", Toast.LENGTH_SHORT).show()
         }
+        apiCard.addView(urlInput)
+        apiCard.addView(keyInput)
+        apiCard.addView(modelInput)
+        apiCard.addView(btnSaveApi)
 
         scrollView = ScrollView(this)
         chatLog = TextView(this).apply {
             textSize = 15f
+            setTextColor(UiTheme.TEXT_PRIMARY)
             setTextIsSelectable(true)
             setPadding(8, 12, 8, 12)
             text = "MedTech AI Ready.\n"
@@ -76,37 +85,32 @@ class AiChatActivity : AppCompatActivity() {
 
         val checkClip = CheckBox(this).apply {
             text = "Attach Latest Cropped Screenshot"
+            setTextColor(UiTheme.GOLD_LIGHT)
             setOnCheckedChangeListener { _, checked -> attachLatestClip = checked }
         }
 
         val promptInput = EditText(this).apply {
             hint = "Ask AI..."
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setHintTextColor(UiTheme.TEXT_MUTED)
             setText(prefs.getLastExtractedText())
         }
 
-        val btnSend = Button(this).apply {
-            text = "Send"
-            setBackgroundColor(Color.parseColor("#00897B"))
-            setTextColor(Color.WHITE)
-            setOnClickListener {
-                val q = promptInput.text.toString().trim()
-                if (q.isEmpty()) return@setOnClickListener
-                if (prefs.aiApiKey.isEmpty()) {
-                    Toast.makeText(this@AiChatActivity, "Enter & Save API Key first", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                chatLog.append("\n🧑 You:\n$q\n")
-                promptInput.setText("")
-                scrollToBottom()
-                sendToAi(q)
+        val btnSend = UiTheme.goldButton(this, "Send", topMarginDp = 8) {
+            val q = promptInput.text.toString().trim()
+            if (q.isEmpty()) return@goldButton
+            if (prefs.aiApiKey.isEmpty()) {
+                Toast.makeText(this@AiChatActivity, "Enter & Save API Key first", Toast.LENGTH_SHORT).show()
+                return@goldButton
             }
+            chatLog.append("\n🧑 You:\n$q\n")
+            promptInput.setText("")
+            scrollToBottom()
+            sendToAi(q)
         }
 
         root.addView(header)
-        root.addView(urlInput)
-        root.addView(keyInput)
-        root.addView(modelInput)
-        root.addView(btnSaveApi)
+        root.addView(apiCard)
         root.addView(
             scrollView,
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)

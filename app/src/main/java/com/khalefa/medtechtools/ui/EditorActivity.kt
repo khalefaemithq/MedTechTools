@@ -37,12 +37,11 @@ class EditorActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#0F1419"))
+            setBackgroundColor(UiTheme.BG_NAVY)
         }
 
-        // Top Action Toolbar
         val toolbarScroll = HorizontalScrollView(this).apply {
-            setBackgroundColor(Color.parseColor("#1A222B"))
+            setBackgroundColor(UiTheme.CARD_BLUE)
             isHorizontalScrollBarEnabled = false
         }
         val toolbar = LinearLayout(this).apply {
@@ -53,12 +52,14 @@ class EditorActivity : AppCompatActivity() {
 
         val btnColor = Button(this).apply {
             text = "🎨 Color Studio"
+            setTextColor(UiTheme.BG_NAVY)
+            setBackgroundColor(UiTheme.GOLD)
             setOnClickListener { openFullColorStudio() }
         }
 
         val switchStylus = Switch(this).apply {
             text = "✒️ Stylus Only "
-            setTextColor(Color.WHITE)
+            setTextColor(UiTheme.GOLD_LIGHT)
             setPadding(16, 0, 16, 0)
             setOnCheckedChangeListener { _, isChecked ->
                 canvasView.stylusOnlyMode = isChecked
@@ -67,18 +68,22 @@ class EditorActivity : AppCompatActivity() {
 
         val btnUndo = Button(this).apply {
             text = "↩"
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setBackgroundColor(UiTheme.SURFACE_BLUE)
             setOnClickListener { canvasView.undo() }
         }
 
         val btnClear = Button(this).apply {
             text = "🗑"
+            setTextColor(UiTheme.TEXT_PRIMARY)
+            setBackgroundColor(UiTheme.SURFACE_BLUE)
             setOnClickListener { canvasView.clearAll() }
         }
 
         val btnCopy = Button(this).apply {
             text = "✓ Copy"
-            setBackgroundColor(Color.parseColor("#00897B"))
-            setTextColor(Color.WHITE)
+            setBackgroundColor(UiTheme.ROYAL_BLUE)
+            setTextColor(UiTheme.TEXT_PRIMARY)
             setOnClickListener {
                 val merged = canvasView.exportMergedBitmap()
                 prefs.saveAndCopyImageToClipboard(merged)
@@ -95,7 +100,6 @@ class EditorActivity : AppCompatActivity() {
         toolbarScroll.addView(toolbar)
         root.addView(toolbarScroll)
 
-        // Brush Size Bar
         val sizeBar = SeekBar(this).apply {
             max = 55
             progress = 8
@@ -134,7 +138,7 @@ class EditorActivity : AppCompatActivity() {
             background = GradientDrawable().apply {
                 setColor(selectedColor)
                 cornerRadius = 16f
-                setStroke(2, Color.GRAY)
+                setStroke(2, UiTheme.GOLD)
             }
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 96)
         }
@@ -144,20 +148,19 @@ class EditorActivity : AppCompatActivity() {
             hint = "#AARRGGBB"
         }
 
-        // Quick Swatches Row
         val swatchesRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(0, 12, 0, 12)
         }
         val presets = listOf(
-            "#FFE53935", // Red Pen
-            "#FF1E88E5", // Blue Pen
-            "#FF00897B", // MedTech Teal
-            "#88FFEB3B", // Translucent Yellow Highlighter
-            "#8800E676", // Translucent Green Highlighter
-            "#FF000000", // Black
-            "#FFFFFFFF"  // White
+            "#FFE53935",
+            "#FF1565C0",
+            "#FFD4AF37",
+            "#88FFEB3B",
+            "#8800E676",
+            "#FF000000",
+            "#FFFFFFFF"
         )
 
         lateinit var hueBar: SeekBar
@@ -187,7 +190,7 @@ class EditorActivity : AppCompatActivity() {
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(c)
-                    setStroke(2, Color.DKGRAY)
+                    setStroke(2, UiTheme.GOLD)
                 }
                 layoutParams = LinearLayout.LayoutParams(68, 68).apply {
                     setMargins(8, 0, 8, 0)

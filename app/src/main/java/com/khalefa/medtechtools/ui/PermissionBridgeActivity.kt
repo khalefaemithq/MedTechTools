@@ -21,10 +21,14 @@ class PermissionBridgeActivity : Activity() {
         private const val REQ_MEDIA_PROJECTION = 1001
         private const val REQ_OVERLAY = 1002
         private const val REQ_NOTIFICATIONS = 1003
+        const val EXTRA_PENDING_ACTION = "pending_action"
     }
+
+    private var pendingAction: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingAction = intent.getStringExtra(EXTRA_PENDING_ACTION)
 
         val prefs = PrefsManager(this)
         if (!prefs.termsAccepted) {
@@ -89,6 +93,7 @@ class PermissionBridgeActivity : Activity() {
                     action = FloatingBubbleService.ACTION_START_WITH_PROJECTION
                     putExtra(FloatingBubbleService.EXTRA_RESULT_CODE, resultCode)
                     putExtra(FloatingBubbleService.EXTRA_RESULT_DATA, data)
+                    pendingAction?.let { putExtra(EXTRA_PENDING_ACTION, it) }
                 }
             } else {
                 Intent(this, FloatingBubbleService::class.java)

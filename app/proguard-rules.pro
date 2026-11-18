@@ -1,0 +1,2 @@
+-keep class com.khalefa.medtechtools.** { *; }
+-dontwarn com.google.mlkit.**
