@@ -561,6 +561,26 @@ class FloatingBubbleService : Service() {
     }
 
     private fun captureAndCrop(pendingActionKey: String, onResult: (Bitmap) -> Unit) {
+        // Primary: Universal cross-app Accessibility Screenshot (Android 11+)
+        val acc = MedTechAccessibilityService.instance
+        if (acc != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            bubbleView?.visibility = View.INVISIBLE
+            handler.postDelayed({
+                acc.captureFullScreen { bmp ->
+                    handler.post {
+                        bubbleView?.visibility = View.VISIBLE
+                        if (bmp != null) {
+                            showCropOverlay(bmp, onResult)
+                        } else {
+                            Toast.makeText(this, "Tap again to capture", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }, 90)
+            return
+        }
+
+        // Fallback: MediaProjection
         if (mediaProjection == null || virtualDisplay == null || imageReader == null) {
             launchActivitySafe(Intent(this, PermissionBridgeActivity::class.java).apply {
                 putExtra(PermissionBridgeActivity.EXTRA_PENDING_ACTION, pendingActionKey)

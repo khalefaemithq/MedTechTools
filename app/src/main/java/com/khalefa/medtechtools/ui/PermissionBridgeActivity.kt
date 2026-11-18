@@ -16,6 +16,7 @@ import android.widget.Toast
 import com.khalefa.medtechtools.R
 import com.khalefa.medtechtools.prefs.PrefsManager
 import com.khalefa.medtechtools.service.FloatingBubbleService
+import com.khalefa.medtechtools.service.MedTechAccessibilityService
 
 class PermissionBridgeActivity : Activity() {
 
@@ -97,6 +98,21 @@ class PermissionBridgeActivity : Activity() {
     }
 
     private fun requestScreenCaptureOnce() {
+        // On Android 11+, if Accessibility Screenshot Service is enabled, no MediaProjection dialog is needed!
+        if (MedTechAccessibilityService.isAvailable()) {
+            val serviceIntent = Intent(this, FloatingBubbleService::class.java).apply {
+                pendingAction?.let { putExtra(EXTRA_PENDING_ACTION, it) }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            finish()
+            return
+        }
+
+        // Fallback to MediaProjection (on Android 14+, force Entire Screen instead of Single App)
         Toast.makeText(this, getString(R.string.choose_entire_screen_toast), Toast.LENGTH_LONG).show()
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val captureIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {

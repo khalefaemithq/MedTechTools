@@ -5,7 +5,9 @@ import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -18,12 +20,14 @@ import androidx.core.view.WindowInsetsCompat
 import com.khalefa.medtechtools.R
 import com.khalefa.medtechtools.prefs.PrefsManager
 import com.khalefa.medtechtools.service.FloatingBubbleService
+import com.khalefa.medtechtools.service.MedTechAccessibilityService
 import kotlin.system.exitProcess
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var prefs: PrefsManager
     private lateinit var toggleBubbleBtn: Button
+    private var accessibilityBtn: Button? = null
 
     private val pickIconLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -146,9 +150,15 @@ class MainActivity : AppCompatActivity() {
         headerCard.addView(topBar)
         root.addView(headerCard)
 
-        // 2. Service Controls Card (Single Toggle Button)
+        // 2. Service Controls Card (Single Toggle Button + Universal Screenshot Permission)
         val controlCard = UiTheme.createCard(this, goldBorder = false)
-        toggleBubbleBtn = UiTheme.primaryButton(this, getString(R.string.start_bubble), topMarginDp = 0) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            accessibilityBtn = UiTheme.goldButton(this, getString(R.string.grant_accessibility), topMarginDp = 0) {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            controlCard.addView(accessibilityBtn)
+        }
+        toggleBubbleBtn = UiTheme.primaryButton(this, getString(R.string.start_bubble), topMarginDp = 10) {
             if (FloatingBubbleService.isRunning) {
                 stopService(Intent(this@MainActivity, FloatingBubbleService::class.java))
                 FloatingBubbleService.isRunning = false
@@ -443,6 +453,11 @@ class MainActivity : AppCompatActivity() {
             getString(R.string.stop_bubble)
         } else {
             getString(R.string.start_bubble)
+        }
+        accessibilityBtn?.visibility = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MedTechAccessibilityService.isAvailable()) {
+            View.VISIBLE
+        } else {
+            View.GONE
         }
     }
 
