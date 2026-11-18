@@ -180,7 +180,7 @@ class CropOverlayView(
     private fun performCrop() {
 
         if (width <= 0 || height <= 0) {
-|---|
+            onCancel()
             return
         }
         val scaleX = screenshot.width.toFloat() / width.toFloat()

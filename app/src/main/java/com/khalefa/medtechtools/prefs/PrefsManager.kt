@@ -111,7 +111,7 @@ class PrefsManager(private val context: Context) {
     fun isToolEnabled(actionKey: String): Boolean {
 
         if (actionKey == ACT_NONE || actionKey == ACT_SHOW_MENU) return false
-|---|prefs.getBoolean("tool_enabled_$actionKey", true)
+        return prefs.getBoolean("tool_enabled_$actionKey", true)
     }
 
     fun setToolEnabled(actionKey: String, enabled: Boolean) {

@@ -23,7 +23,7 @@ class StylusCanvasView(context: Context, private val baseBitmap: Bitmap) : View(
         super.onDraw(canvas)
 
         if (width <= 0 || height <= 0 || baseBitmap.isRecycled) return
-|---|---|---|
+
         val scale = minOf(width.toFloat() / baseBitmap.width, height.toFloat() / baseBitmap.height)
         val drawW = baseBitmap.width * scale
         val drawH = baseBitmap.height * scale
