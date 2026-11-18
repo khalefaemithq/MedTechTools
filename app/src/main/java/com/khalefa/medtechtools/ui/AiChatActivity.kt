@@ -1,0 +1,197 @@
+package com.khalefa.medtechtools.ui
+
+import android.graphics.Color
+import android.graphics.Typeface
+import android.os.Bundle
+import android.util.Base64
+import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.khalefa.medtechtools.R
+import com.khalefa.medtechtools.prefs.PrefsManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+
+class AiChatActivity : AppCompatActivity() {
+
+    private lateinit var prefs: PrefsManager
+    private lateinit var chatLog: TextView
+    private lateinit var scrollView: ScrollView
+    private var attachLatestClip = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        prefs = PrefsManager(this)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 24, 24, 24)
+        }
+
+        val header = TextView(this).apply {
+            text = "${getString(R.string.app_name)} • AI Assistant"
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#00897B"))
+            setPadding(0, 0, 0, 12)
+        }
+
+        val urlInput = EditText(this).apply {
+            hint = "API Endpoint URL (e.g. OpenRouter / Groq / OpenAI)"
+            setText(prefs.aiBaseUrl)
+        }
+        val keyInput = EditText(this).apply {
+            hint = "API Key (sk-...)"
+            setText(prefs.aiApiKey)
+        }
+        val modelInput = EditText(this).apply {
+            hint = "Model Name (e.g. google/gemini-2.0-flash-001)"
+            setText(prefs.aiModel)
+        }
+
+        val btnSaveApi = Button(this).apply {
+            text = "Save API Settings"
+            setOnClickListener {
+                prefs.aiBaseUrl = urlInput.text.toString()
+                prefs.aiApiKey = keyInput.text.toString()
+                prefs.aiModel = modelInput.text.toString()
+                Toast.makeText(this@AiChatActivity, "API Settings Saved", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        scrollView = ScrollView(this)
+        chatLog = TextView(this).apply {
+            textSize = 15f
+            setTextIsSelectable(true)
+            setPadding(8, 12, 8, 12)
+            text = "MedTech AI Ready.\n"
+        }
+        scrollView.addView(chatLog)
+
+        val checkClip = CheckBox(this).apply {
+            text = "Attach Latest Cropped Screenshot"
+            setOnCheckedChangeListener { _, checked -> attachLatestClip = checked }
+        }
+
+        val promptInput = EditText(this).apply {
+            hint = "Ask AI..."
+            setText(prefs.getLastExtractedText())
+        }
+
+        val btnSend = Button(this).apply {
+            text = "Send"
+            setBackgroundColor(Color.parseColor("#00897B"))
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                val q = promptInput.text.toString().trim()
+                if (q.isEmpty()) return@setOnClickListener
+                if (prefs.aiApiKey.isEmpty()) {
+                    Toast.makeText(this@AiChatActivity, "Enter & Save API Key first", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                chatLog.append("\n🧑 You:\n$q\n")
+                promptInput.setText("")
+                scrollToBottom()
+                sendToAi(q)
+            }
+        }
+
+        root.addView(header)
+        root.addView(urlInput)
+        root.addView(keyInput)
+        root.addView(modelInput)
+        root.addView(btnSaveApi)
+        root.addView(
+            scrollView,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        )
+        root.addView(checkClip)
+        root.addView(promptInput)
+        root.addView(btnSend)
+
+        setContentView(root)
+    }
+
+    private fun scrollToBottom() {
+        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+    }
+
+    private fun sendToAi(prompt: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL(prefs.aiBaseUrl)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 20000
+                    readTimeout = 45000
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Authorization", "Bearer ${prefs.aiApiKey}")
+                    doOutput = true
+                }
+
+                val contentArr = JSONArray().apply {
+                    put(JSONObject().put("type", "text").put("text", prompt))
+                    if (attachLatestClip) {
+                        prefs.getLatestClipFile()?.let { file ->
+                            val b64 = Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                            put(
+                                JSONObject()
+                                    .put("type", "image_url")
+                                    .put(
+                                        "image_url",
+                                        JSONObject().put("url", "data:image/png;base64,$b64")
+                                    )
+                            )
+                        }
+                    }
+                }
+
+                val body = JSONObject().apply {
+                    put("model", prefs.aiModel)
+                    put(
+                        "messages",
+                        JSONArray().put(
+                            JSONObject().put("role", "user").put("content", contentArr)
+                        )
+                    )
+                }
+
+                OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
+
+                val code = conn.responseCode
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val responseStr = stream.bufferedReader().readText()
+
+                if (code !in 200..299) {
+                    withContext(Dispatchers.Main) {
+                        chatLog.append("\n⚠️ HTTP $code:\n$responseStr\n")
+                        scrollToBottom()
+                    }
+                    return@launch
+                }
+
+                val reply = JSONObject(responseStr)
+                    .getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
+
+                withContext(Dispatchers.Main) {
+                    chatLog.append("\n🤖 AI:\n$reply\n")
+                    scrollToBottom()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    chatLog.append("\n⚠️ Error: ${e.message}\n")
+                    scrollToBottom()
+                }
+            }
+        }
+    }
+}
