@@ -25,12 +25,13 @@ class AiChatActivity : AppCompatActivity() {
     private var attachLatestClip = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        UiTheme.applyNightMode(this)
         super.onCreate(savedInstanceState)
         prefs = PrefsManager(this)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(UiTheme.BG_LIGHT)
+            setBackgroundColor(UiTheme.bg(this@AiChatActivity))
             val p = UiTheme.dp(this@AiChatActivity, 16)
             setPadding(p, p, p, p)
         }
@@ -39,27 +40,27 @@ class AiChatActivity : AppCompatActivity() {
             text = "${getString(R.string.app_name)} • AI Assistant"
             textSize = 18f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.ROYAL_BLUE)
+            setTextColor(UiTheme.royalBlue())
             setPadding(0, 0, 0, 12)
         }
 
         val apiCard = UiTheme.createCard(this, goldBorder = true)
         val urlInput = EditText(this).apply {
-            hint = "API Endpoint URL"
-            setTextColor(UiTheme.TEXT_PRIMARY)
-            setHintTextColor(UiTheme.TEXT_MUTED)
+            hint = "https://openrouter.ai/api/v1/chat/completions"
+            setTextColor(UiTheme.textPrimary(this@AiChatActivity))
+            setHintTextColor(UiTheme.textMuted(this@AiChatActivity))
             setText(prefs.aiBaseUrl)
         }
         val keyInput = EditText(this).apply {
             hint = "API Key (sk-...)"
-            setTextColor(UiTheme.TEXT_PRIMARY)
-            setHintTextColor(UiTheme.TEXT_MUTED)
+            setTextColor(UiTheme.textPrimary(this@AiChatActivity))
+            setHintTextColor(UiTheme.textMuted(this@AiChatActivity))
             setText(prefs.aiApiKey)
         }
         val modelInput = EditText(this).apply {
-            hint = "Model Name"
-            setTextColor(UiTheme.TEXT_PRIMARY)
-            setHintTextColor(UiTheme.TEXT_MUTED)
+            hint = "Gemini 4 Hydrogen"
+            setTextColor(UiTheme.textPrimary(this@AiChatActivity))
+            setHintTextColor(UiTheme.textMuted(this@AiChatActivity))
             setText(prefs.aiModel)
         }
         val btnSaveApi = UiTheme.secondaryButton(this, "Save API Settings", topMarginDp = 6) {
@@ -76,7 +77,7 @@ class AiChatActivity : AppCompatActivity() {
         scrollView = ScrollView(this)
         chatLog = TextView(this).apply {
             textSize = 15f
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            setTextColor(UiTheme.textPrimary(this@AiChatActivity))
             setTextIsSelectable(true)
             setPadding(8, 12, 8, 12)
             text = "MedTech AI Ready.\n"
@@ -85,22 +86,23 @@ class AiChatActivity : AppCompatActivity() {
 
         val checkClip = CheckBox(this).apply {
             text = "Attach Latest Cropped Screenshot"
-            setTextColor(UiTheme.ROYAL_BLUE)
+            setTextColor(UiTheme.royalBlue())
             setOnCheckedChangeListener { _, checked -> attachLatestClip = checked }
         }
 
         val promptInput = EditText(this).apply {
             hint = "Ask AI..."
-            setTextColor(UiTheme.TEXT_PRIMARY)
-            setHintTextColor(UiTheme.TEXT_MUTED)
+            setTextColor(UiTheme.textPrimary(this@AiChatActivity))
+            setHintTextColor(UiTheme.textMuted(this@AiChatActivity))
             setText(prefs.getLastExtractedText())
         }
 
         val btnSend = UiTheme.primaryButton(this, "Send", topMarginDp = 8) {
             val q = promptInput.text.toString().trim()
             if (q.isEmpty()) return@primaryButton
-            if (prefs.aiApiKey.isEmpty()) {
-                Toast.makeText(this@AiChatActivity, "Enter & Save API Key first", Toast.LENGTH_SHORT).show()
+
+            if (prefs.aiApiKey.isEmpty() || prefs.aiBaseUrl.isEmpty() || prefs.aiModel.isEmpty()) {
+Toast.makeText(this@AiChatActivity, "Enter & Save API Key, URL and Model first", Toast.LENGTH_SHORT).show()
                 return@primaryButton
             }
             chatLog.append("\n🧑 You:\n$q\n")

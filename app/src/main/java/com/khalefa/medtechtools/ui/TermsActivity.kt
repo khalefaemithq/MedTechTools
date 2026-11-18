@@ -19,6 +19,7 @@ class TermsActivity : AppCompatActivity() {
     private var viewOnlyMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        UiTheme.applyNightMode(this)
         super.onCreate(savedInstanceState)
         prefs = PrefsManager(this)
         viewOnlyMode = intent.getBooleanExtra("view_only", false)
@@ -35,7 +36,7 @@ class TermsActivity : AppCompatActivity() {
         })
 
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(UiTheme.BG_LIGHT)
+            setBackgroundColor(UiTheme.bg(this@TermsActivity))
             isFillViewport = true
         }
 
@@ -52,7 +53,7 @@ class TermsActivity : AppCompatActivity() {
             text = getString(R.string.app_name)
             textSize = 22f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.ROYAL_BLUE)
+            setTextColor(UiTheme.royalBlue())
             gravity = Gravity.CENTER
         }
 
@@ -60,7 +61,7 @@ class TermsActivity : AppCompatActivity() {
             text = getString(R.string.app_tagline)
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.GOLD_TEXT)
+            setTextColor(UiTheme.goldText(this@TermsActivity))
             gravity = Gravity.CENTER
             setPadding(0, 6, 0, 20)
         }
@@ -69,7 +70,7 @@ class TermsActivity : AppCompatActivity() {
             text = getString(R.string.terms_title)
             textSize = 17f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            setTextColor(UiTheme.textPrimary(this@TermsActivity))
             setPadding(0, 0, 0, 12)
         }
 
@@ -77,14 +78,14 @@ class TermsActivity : AppCompatActivity() {
             text = getString(R.string.terms_body)
             textSize = 14.5f
             setLineSpacing(8f, 1.15f)
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            setTextColor(UiTheme.textPrimary(this@TermsActivity))
             setPadding(0, 0, 0, 22)
         }
 
         val devFooter = TextView(this).apply {
             text = getString(R.string.subtitle_dev)
             textSize = 13f
-            setTextColor(UiTheme.TEXT_MUTED)
+            setTextColor(UiTheme.textMuted(this@TermsActivity))
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, 16)
         }

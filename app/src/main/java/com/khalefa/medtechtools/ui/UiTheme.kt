@@ -7,22 +7,30 @@ import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
+import androidx.appcompat.app.AppCompatDelegate
+import com.khalefa.medtechtools.prefs.PrefsManager
 
 object UiTheme {
-    // Light Royal Blue & Soft Gold Palette
-    val BG_LIGHT = Color.parseColor("#F0F4FA")
-    val CARD_WHITE = Color.parseColor("#FFFFFF")
-    val SURFACE_TINT = Color.parseColor("#E6EEF9")
-    val BORDER_BLUE = Color.parseColor("#CBD8EC")
-    val ROYAL_BLUE = Color.parseColor("#2B6CB0")
-    val BRIGHT_BLUE = Color.parseColor("#3B82F6")
-    val GOLD_SOFT = Color.parseColor("#C9A84C")
-    val GOLD_PALE = Color.parseColor("#F5E6B8")
-    val GOLD_TEXT = Color.parseColor("#7A5C12")
-    val TEXT_PRIMARY = Color.parseColor("#1E293B")
-    val TEXT_MUTED = Color.parseColor("#475569")
-    val DANGER_SOFT = Color.parseColor("#C05656")
-    val DANGER_BORDER = Color.parseColor("#E08E8E")
+    fun isDark(ctx: Context): Boolean = PrefsManager(ctx).appTheme == "dark"
+
+    fun applyNightMode(ctx: Context) {
+        val mode = if (isDark(ctx)) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        AppCompatDelegate.setDefaultNightMode(mode)
+    }
+
+    fun bg(ctx: Context): Int = if (isDark(ctx)) Color.parseColor("#0A1628") else Color.parseColor("#F0F4FA")
+    fun card(ctx: Context): Int = if (isDark(ctx)) Color.parseColor("#112240") else Color.parseColor("#FFFFFF")
+    fun surface(ctx: Context): Int = if (isDark(ctx)) Color.parseColor("#162D50") else Color.parseColor("#E6EEF9")
+    fun border(ctx: Context): Int = if (isDark(ctx)) Color.parseColor("#233554") else Color.parseColor("#CBD8EC")
+    fun royalBlue(): Int = Color.parseColor("#2B6CB0")
+    fun brightBlue(): Int = Color.parseColor("#3B82F6")
+    fun goldSoft(): Int = Color.parseColor("#C9A84C")
+    fun goldPale(ctx: Context): Int = if (isDark(ctx)) Color.parseColor("#2A2310") else Color.parseColor("#F5E6B8")
+    fun goldText(ctx: Context): Int = if (isDark(ctx)) Color.parseColor("#E2C878") else Color.parseColor("#7A5C12")
+    fun textPrimary(ctx: Context): Int = if (isDark(ctx)) Color.parseColor("#F1F5F9") else Color.parseColor("#1E293B")
+    fun textMuted(ctx: Context): Int = if (isDark(ctx)) Color.parseColor("#94A3B8") else Color.parseColor("#475569")
+    fun dangerSoft(): Int = Color.parseColor("#C05656")
+    fun dangerBorder(): Int = Color.parseColor("#E08E8E")
 
     fun dp(ctx: Context, value: Int): Int =
         (value * ctx.resources.displayMetrics.density).toInt()
@@ -33,9 +41,9 @@ object UiTheme {
             val p = dp(ctx, 16)
             setPadding(p, p, p, p)
             background = GradientDrawable().apply {
-                setColor(CARD_WHITE)
+                setColor(card(ctx))
                 cornerRadius = dp(ctx, 16).toFloat()
-                setStroke(dp(ctx, 1), if (goldBorder) GOLD_SOFT else BORDER_BLUE)
+                setStroke(dp(ctx, 1), if (goldBorder) goldSoft() else border(ctx))
             }
             elevation = dp(ctx, 2).toFloat()
             layoutParams = LinearLayout.LayoutParams(
@@ -79,27 +87,27 @@ object UiTheme {
         return styleButton(ctx, Button(ctx).apply {
             text = label
             setOnClickListener { onClick() }
-        }, ROYAL_BLUE, Color.WHITE, BRIGHT_BLUE, topMarginDp)
+        }, royalBlue(), Color.WHITE, brightBlue(), topMarginDp)
     }
 
     fun goldButton(ctx: Context, label: String, topMarginDp: Int = 8, onClick: () -> Unit): Button {
         return styleButton(ctx, Button(ctx).apply {
             text = label
             setOnClickListener { onClick() }
-        }, GOLD_PALE, GOLD_TEXT, GOLD_SOFT, topMarginDp)
+        }, goldPale(ctx), goldText(ctx), goldSoft(), topMarginDp)
     }
 
     fun secondaryButton(ctx: Context, label: String, topMarginDp: Int = 8, onClick: () -> Unit): Button {
         return styleButton(ctx, Button(ctx).apply {
             text = label
             setOnClickListener { onClick() }
-        }, SURFACE_TINT, ROYAL_BLUE, BORDER_BLUE, topMarginDp)
+        }, surface(ctx), if (isDark(ctx)) Color.WHITE else royalBlue(), border(ctx), topMarginDp)
     }
 
     fun dangerButton(ctx: Context, label: String, topMarginDp: Int = 12, onClick: () -> Unit): Button {
         return styleButton(ctx, Button(ctx).apply {
             text = label
             setOnClickListener { onClick() }
-        }, DANGER_SOFT, Color.WHITE, DANGER_BORDER, topMarginDp)
+        }, dangerSoft(), Color.WHITE, dangerBorder(), topMarginDp)
     }
 }

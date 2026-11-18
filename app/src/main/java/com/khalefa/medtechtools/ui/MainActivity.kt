@@ -3,8 +3,11 @@ package com.khalefa.medtechtools.ui
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -15,11 +18,14 @@ import androidx.core.os.LocaleListCompat
 import com.khalefa.medtechtools.R
 import com.khalefa.medtechtools.prefs.PrefsManager
 import com.khalefa.medtechtools.service.FloatingBubbleService
+import com.khalefa.medtechtools.service.MedTechAccessibilityService
 import kotlin.system.exitProcess
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var prefs: PrefsManager
+    private lateinit var toggleBubbleBtn: Button
+    private var accessibilityBtn: Button? = null
 
     private val pickIconLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -38,6 +44,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         prefs = PrefsManager(this)
+        UiTheme.applyNightMode(this)
         applySavedLocale()
         super.onCreate(savedInstanceState)
 
@@ -48,7 +55,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(UiTheme.BG_LIGHT)
+            setBackgroundColor(UiTheme.bg(this@MainActivity))
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -56,13 +63,18 @@ class MainActivity : AppCompatActivity() {
             setPadding(p, UiTheme.dp(this@MainActivity, 20), p, UiTheme.dp(this@MainActivity, 32))
         }
 
-        // 1. Header Card (App Icon, Name & Tagline only)
+        // 1. Header Card with Rounded App Logo
         val headerCard = UiTheme.createCard(this, goldBorder = true).apply {
             gravity = Gravity.CENTER_HORIZONTAL
         }
         val logoIv = ImageView(this).apply {
             setImageResource(R.drawable.ic_launcher)
-            val sz = UiTheme.dp(this@MainActivity, 72)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply {
+                cornerRadius = UiTheme.dp(this@MainActivity, 22).toFloat()
+            }
+            clipToOutline = true
+            val sz = UiTheme.dp(this@MainActivity, 76)
             layoutParams = LinearLayout.LayoutParams(sz, sz).apply {
                 bottomMargin = UiTheme.dp(this@MainActivity, 10)
             }
@@ -72,28 +84,39 @@ class MainActivity : AppCompatActivity() {
             text = getString(R.string.app_name)
             textSize = 21f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.ROYAL_BLUE)
+            setTextColor(UiTheme.royalBlue())
             gravity = Gravity.CENTER
         })
         headerCard.addView(TextView(this).apply {
             text = getString(R.string.app_tagline)
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.GOLD_TEXT)
+            setTextColor(UiTheme.goldText(this@MainActivity))
             gravity = Gravity.CENTER
             setPadding(0, 4, 0, 2)
         })
         root.addView(headerCard)
 
-        // 2. Service Controls Card
+        // 2. Service Controls Card (Single Toggle Button + Universal Screenshot Permission)
         val controlCard = UiTheme.createCard(this, goldBorder = false)
-        controlCard.addView(UiTheme.primaryButton(this, getString(R.string.start_bubble), topMarginDp = 0) {
-            startActivity(Intent(this@MainActivity, PermissionBridgeActivity::class.java))
-        })
-        controlCard.addView(UiTheme.goldButton(this, getString(R.string.stop_bubble), topMarginDp = 10) {
-            stopService(Intent(this@MainActivity, FloatingBubbleService::class.java))
-            Toast.makeText(this@MainActivity, getString(R.string.stop_bubble), Toast.LENGTH_SHORT).show()
-        })
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            accessibilityBtn = UiTheme.goldButton(this, getString(R.string.grant_accessibility), topMarginDp = 0) {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            controlCard.addView(accessibilityBtn)
+        }
+
+        toggleBubbleBtn = UiTheme.primaryButton(this, getString(R.string.start_bubble), topMarginDp = 10) {
+            if (FloatingBubbleService.isRunning) {
+                stopService(Intent(this@MainActivity, FloatingBubbleService::class.java))
+                FloatingBubbleService.isRunning = false
+                updateServiceButtons()
+            } else {
+                startActivity(Intent(this@MainActivity, PermissionBridgeActivity::class.java))
+            }
+        }
+        controlCard.addView(toggleBubbleBtn)
+
         controlCard.addView(UiTheme.secondaryButton(this, getString(R.string.telegram_channel), topMarginDp = 10) {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/KhalefaTechMed")))
         })
@@ -111,13 +134,35 @@ class MainActivity : AppCompatActivity() {
             text = getString(R.string.how_to_body)
             textSize = 13.5f
             setLineSpacing(6f, 1.15f)
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            setTextColor(UiTheme.textPrimary(this@MainActivity))
         })
         root.addView(guideCard)
 
-        // 4. Display Language Card
-        val langCard = UiTheme.createCard(this, goldBorder = false)
-        addSectionHeader(langCard, getString(R.string.language_label), topPad = 0)
+        // 4. Theme & Display Language Card
+        val appearanceCard = UiTheme.createCard(this, goldBorder = false)
+        addSectionHeader(appearanceCard, getString(R.string.theme_label), topPad = 0)
+        val themeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                listOf(getString(R.string.theme_light), getString(R.string.theme_dark))
+            )
+            setSelection(if (prefs.appTheme == "dark") 1 else 0)
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                    val chosen = if (pos == 1) "dark" else "light"
+                    if (chosen != prefs.appTheme) {
+                        prefs.appTheme = chosen
+                        UiTheme.applyNightMode(this@MainActivity)
+                        recreate()
+                    }
+                }
+                override fun onNothingSelected(p: AdapterView<*>?) {}
+            }
+        }
+        appearanceCard.addView(themeSpinner)
+
+        addSectionHeader(appearanceCard, getString(R.string.language_label), topPad = UiTheme.dp(this, 14))
         val langSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@MainActivity,
@@ -146,8 +191,8 @@ class MainActivity : AppCompatActivity() {
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
         }
-        langCard.addView(langSpinner)
-        root.addView(langCard)
+        appearanceCard.addView(langSpinner)
+        root.addView(appearanceCard)
 
         // 5. Floating Bubble Size, Transparency & Gallery Save Card
         val bubbleCard = UiTheme.createCard(this, goldBorder = false)
@@ -155,7 +200,7 @@ class MainActivity : AppCompatActivity() {
 
         val sizeLabel = TextView(this).apply {
             text = "${getString(R.string.bubble_size)}: ${prefs.bubbleSizeDp} dp"
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            setTextColor(UiTheme.textPrimary(this@MainActivity))
         }
         bubbleCard.addView(sizeLabel)
         bubbleCard.addView(SeekBar(this).apply {
@@ -176,7 +221,7 @@ class MainActivity : AppCompatActivity() {
 
         val transLabel = TextView(this).apply {
             text = "${getString(R.string.bubble_transparency)}: ${prefs.bubbleTransparency}%"
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            setTextColor(UiTheme.textPrimary(this@MainActivity))
             setPadding(0, UiTheme.dp(this@MainActivity, 10), 0, 0)
         }
         bubbleCard.addView(transLabel)
@@ -198,7 +243,7 @@ class MainActivity : AppCompatActivity() {
 
         val galleryCheck = CheckBox(this).apply {
             text = getString(R.string.save_to_gallery)
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            setTextColor(UiTheme.textPrimary(this@MainActivity))
             isChecked = prefs.saveToGallery
             setPadding(0, UiTheme.dp(this@MainActivity, 8), 0, 0)
             setOnCheckedChangeListener { _, checked ->
@@ -216,7 +261,7 @@ class MainActivity : AppCompatActivity() {
         })
         root.addView(bubbleCard)
 
-        // 6. Tap Behavior & 6-Gesture System Card
+        // 6. Tap Behavior & 8-Gesture System Card
         val actionsCard = UiTheme.createCard(this, goldBorder = false)
         addSectionHeader(actionsCard, getString(R.string.triple_actions), topPad = 0)
         val actionNames = PrefsManager.ALL_ACTIONS.map { getActionDisplayName(it) }
@@ -224,7 +269,7 @@ class MainActivity : AppCompatActivity() {
         fun addActionPicker(parent: LinearLayout, label: String, currentKey: String, onSave: (String) -> Unit) {
             parent.addView(TextView(this).apply {
                 text = label
-                setTextColor(UiTheme.GOLD_TEXT)
+                setTextColor(UiTheme.goldText(this@MainActivity))
                 setTypeface(null, Typeface.BOLD)
                 setPadding(0, 10, 0, 2)
             })
@@ -255,7 +300,7 @@ class MainActivity : AppCompatActivity() {
 
         val swipeToggle = CheckBox(this).apply {
             text = getString(R.string.enable_swipe_gestures)
-            setTextColor(UiTheme.TEXT_PRIMARY)
+            setTextColor(UiTheme.textPrimary(this@MainActivity))
             isChecked = prefs.swipeGesturesEnabled
             setOnCheckedChangeListener { _, checked ->
                 prefs.swipeGesturesEnabled = checked
@@ -264,29 +309,80 @@ class MainActivity : AppCompatActivity() {
         }
         actionsCard.addView(swipeToggle)
 
-        addActionPicker(swipeContainer, getString(R.string.gesture_circle_cw), prefs.gestureCircleCwAction) { prefs.gestureCircleCwAction = it }
-        addActionPicker(swipeContainer, getString(R.string.gesture_circle_ccw), prefs.gestureCircleCcwAction) { prefs.gestureCircleCcwAction = it }
+        // 8 Gestures: Half-Circles at top, L-Shapes, Triangles, Circles at bottom
+        addActionPicker(swipeContainer, getString(R.string.gesture_half_up), prefs.gestureHalfUpAction) { prefs.gestureHalfUpAction = it }
+        addActionPicker(swipeContainer, getString(R.string.gesture_half_down), prefs.gestureHalfDownAction) { prefs.gestureHalfDownAction = it }
         addActionPicker(swipeContainer, getString(R.string.gesture_l_up), prefs.gestureLUpAction) { prefs.gestureLUpAction = it }
         addActionPicker(swipeContainer, getString(R.string.gesture_l_down), prefs.gestureLDownAction) { prefs.gestureLDownAction = it }
         addActionPicker(swipeContainer, getString(R.string.gesture_tri_up), prefs.gestureTriUpAction) { prefs.gestureTriUpAction = it }
         addActionPicker(swipeContainer, getString(R.string.gesture_tri_down), prefs.gestureTriDownAction) { prefs.gestureTriDownAction = it }
+        addActionPicker(swipeContainer, getString(R.string.gesture_circle_cw), prefs.gestureCircleCwAction) { prefs.gestureCircleCwAction = it }
+        addActionPicker(swipeContainer, getString(R.string.gesture_circle_ccw), prefs.gestureCircleCcwAction) { prefs.gestureCircleCcwAction = it }
         actionsCard.addView(swipeContainer)
         root.addView(actionsCard)
 
-        // 7. Tools Visibility Card
+        // 7. Tools Order, Visibility & Restore Defaults Card
         val visibilityCard = UiTheme.createCard(this, goldBorder = false)
         addSectionHeader(visibilityCard, getString(R.string.visible_tools), topPad = 0)
-        val menuTools = PrefsManager.ALL_ACTIONS.filter {
-            it != PrefsManager.ACT_NONE && it != PrefsManager.ACT_SHOW_MENU
+        val orderListLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        fun rebuildOrderList() {
+            orderListLayout.removeAllViews()
+            val currentOrder = prefs.menuOrder.toMutableList()
+            for (i in currentOrder.indices) {
+                val key = currentOrder[i]
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, UiTheme.dp(this@MainActivity, 3), 0, UiTheme.dp(this@MainActivity, 3))
+                }
+                val cb = CheckBox(this).apply {
+                    text = getActionDisplayName(key)
+                    setTextColor(UiTheme.textPrimary(this@MainActivity))
+                    isChecked = prefs.isToolEnabled(key)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    setOnCheckedChangeListener { _, checked -> prefs.setToolEnabled(key, checked) }
+                }
+                val btnUp = Button(this).apply {
+                    text = "▲"
+                    isEnabled = i > 0
+                    setOnClickListener {
+                        if (i > 0) {
+                            val tmp = currentOrder[i - 1]
+                            currentOrder[i - 1] = currentOrder[i]
+                            currentOrder[i] = tmp
+                            prefs.menuOrder = currentOrder
+                            rebuildOrderList()
+                        }
+                    }
+                }
+                val btnDown = Button(this).apply {
+                    text = "▼"
+                    isEnabled = i < currentOrder.size - 1
+                    setOnClickListener {
+                        if (i < currentOrder.size - 1) {
+                            val tmp = currentOrder[i + 1]
+                            currentOrder[i + 1] = currentOrder[i]
+                            currentOrder[i] = tmp
+                            prefs.menuOrder = currentOrder
+                            rebuildOrderList()
+                        }
+                    }
+                }
+                row.addView(cb)
+                row.addView(btnUp, LinearLayout.LayoutParams(UiTheme.dp(this, 48), UiTheme.dp(this, 42)))
+                row.addView(btnDown, LinearLayout.LayoutParams(UiTheme.dp(this, 48), UiTheme.dp(this, 42)))
+                orderListLayout.addView(row)
+            }
         }
-        for (key in menuTools) {
-            visibilityCard.addView(CheckBox(this).apply {
-                text = getActionDisplayName(key)
-                setTextColor(UiTheme.TEXT_PRIMARY)
-                isChecked = prefs.isToolEnabled(key)
-                setOnCheckedChangeListener { _, checked -> prefs.setToolEnabled(key, checked) }
-            })
-        }
+        rebuildOrderList()
+        visibilityCard.addView(orderListLayout)
+
+        visibilityCard.addView(UiTheme.goldButton(this, getString(R.string.restore_defaults), topMarginDp = 12) {
+            prefs.resetGesturesAndMenuToDefaults()
+            Toast.makeText(this@MainActivity, getString(R.string.defaults_restored), Toast.LENGTH_SHORT).show()
+            recreate()
+        })
         root.addView(visibilityCard)
 
         // 8. Quick Launch Card
@@ -308,13 +404,32 @@ class MainActivity : AppCompatActivity() {
         root.addView(TextView(this).apply {
             text = getString(R.string.subtitle_dev)
             textSize = 13f
-            setTextColor(UiTheme.TEXT_MUTED)
+            setTextColor(UiTheme.textMuted(this@MainActivity))
             gravity = Gravity.CENTER
             setPadding(0, UiTheme.dp(this@MainActivity, 14), 0, UiTheme.dp(this@MainActivity, 6))
         })
 
         scroll.addView(root)
         setContentView(scroll)
+        updateServiceButtons()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateServiceButtons()
+    }
+
+    private fun updateServiceButtons() {
+        if (FloatingBubbleService.isRunning) {
+            toggleBubbleBtn.text = getString(R.string.stop_bubble)
+        } else {
+            toggleBubbleBtn.text = getString(R.string.start_bubble)
+        }
+        accessibilityBtn?.visibility = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MedTechAccessibilityService.isAvailable()) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
     }
 
     private fun getActionDisplayName(key: String): String = when (key) {
@@ -336,7 +451,7 @@ class MainActivity : AppCompatActivity() {
             text = title
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(UiTheme.ROYAL_BLUE)
+            setTextColor(UiTheme.royalBlue())
             setPadding(0, topPad, 0, UiTheme.dp(this@MainActivity, 8))
         })
     }

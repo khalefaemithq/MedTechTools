@@ -31,8 +31,8 @@ jobs:
       - name: Build Lightweight Release APK
         run: gradle assembleRelease
 
-      - name: Upload MedTechTools v1.2 APK
+      - name: Upload MedTechTools v1.3 APK
         uses: actions/upload-artifact@v4
         with:
-          name: MedTechTools-v1.2
+          name: MedTechTools-v1.3
           path: app/build/outputs/apk/release/app-release.apk

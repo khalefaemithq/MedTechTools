@@ -159,6 +159,12 @@ class FloatingBubbleService : Service() {
             ACTION_STOP_EXIT -> {
                 forceExitEverything()
             }
+            else -> {
+                val pendingAct = intent?.getStringExtra(PermissionBridgeActivity.EXTRA_PENDING_ACTION)
+                if (!pendingAct.isNullOrEmpty()) {
+                    handler.postDelayed({ executeAction(pendingAct) }, 200)
+                }
+            }
         }
         return START_STICKY
     }
@@ -289,7 +295,11 @@ class FloatingBubbleService : Service() {
         val singleTapRunnable = Runnable {
             if (tapCount == 1 && !longPressTriggered && !isDragging) {
                 tapCount = 0
-                executeAction(prefs.singleTapAction)
+                if (menuView != null) {
+                    dismissMenu()
+                } else {
+                    executeAction(prefs.singleTapAction)
+                }
             }
         }
 
@@ -342,7 +352,6 @@ class FloatingBubbleService : Service() {
                             iv.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                             executeAction(recognizedAction)
                         } else {
-                            // Normal drag: snap smoothly to nearest left/right edge
                             val curSize = params.width
                             val targetX = if (params.x + curSize / 2 < screenW / 2) 0 else (screenW - curSize).coerceAtLeast(0)
                             val targetY = params.y.coerceIn(0, (screenH - curSize).coerceAtLeast(0))
@@ -363,13 +372,18 @@ class FloatingBubbleService : Service() {
                             }
                         }
                     } else if (!longPressTriggered) {
-                        tapCount++
-                        if (tapCount == 1) {
-                            handler.postDelayed(singleTapRunnable, 230)
-                        } else if (tapCount >= 2) {
-                            handler.removeCallbacks(singleTapRunnable)
+                        if (menuView != null) {
                             tapCount = 0
-                            executeAction(prefs.doubleTapAction)
+                            dismissMenu()
+                        } else {
+                            tapCount++
+                            if (tapCount == 1) {
+                                handler.postDelayed(singleTapRunnable, 230)
+                            } else if (tapCount >= 2) {
+                                handler.removeCallbacks(singleTapRunnable)
+                                tapCount = 0
+                                executeAction(prefs.doubleTapAction)
+                            }
                         }
                     }
                     true
@@ -382,13 +396,11 @@ class FloatingBubbleService : Service() {
     }
 
     /**
-     * Recognizes 6 distinct gestures drawn with the floating bubble:
-     * 1. Clockwise Circle (circle_cw)
-     * 2. Counter-Clockwise Circle (circle_ccw)
-     * 3. L-Shape Up (l_up)
-     * 4. L-Shape Down (l_down)
-     * 5. Upper Edge Triangle (tri_up) - 2 drawn sides using phone edge as 3rd side
-     * 6. Lower Edge Triangle (tri_down) - 2 drawn sides using phone edge as 3rd side
+     * Recognizes 8 distinct gestures drawn with the floating bubble:
+     * 1 & 2: Half-Circle Up / Down
+     * 3 & 4: L-Shape Up / Down
+     * 5 & 6: Triangle Up / Down (2 drawn sides against screen edge)
+     * 7 & 8: Clockwise / Counter-Clockwise Circle
      */
     private fun detectBubbleGesture(pts: List<PointF>): String? {
         if (pts.size < 6) return null
@@ -409,13 +421,12 @@ class FloatingBubbleService : Service() {
             if (b.y < minY) minY = b.y
             if (b.y > maxY) maxY = b.y
         }
-        if (perimeter < dpToPx(90)) return null
+        if (perimeter < dpToPx(85)) return null
 
         val width = maxX - minX
         val height = maxY - minY
         val endToStartDist = hypot((end.x - start.x).toDouble(), (end.y - start.y).toDouble())
 
-        // Shoelace signed area (closed back to start)
         var area2 = 0.0
         for (i in pts.indices) {
             val p1 = pts[i]
@@ -425,17 +436,21 @@ class FloatingBubbleService : Service() {
         val signedArea = area2 / 2.0
         val iq = (4.0 * PI * abs(signedArea)) / (perimeter * perimeter)
 
-        // 1 & 2: Circles (returns near start with high circularity)
+        // 7 & 8: Full Circles (closed loop back to start)
         if (endToStartDist < dpToPx(85) && width > dpToPx(45) && height > dpToPx(45) && iq > 0.36) {
             return if (signedArea > 0) prefs.gestureCircleCwAction else prefs.gestureCircleCcwAction
         }
 
-        // How far inward toward screen center did the path travel?
         val startedOnLeft = start.x < screenW / 2f
         val maxInward = if (startedOnLeft) (maxX - start.x) else (start.x - minX)
 
-        // 5 & 6: Edge Triangles (went inward then returned back to the same edge)
-        if (abs(end.x - start.x) < dpToPx(70) && maxInward >= dpToPx(45)) {
+        // Returned near the starting X edge
+        if (abs(end.x - start.x) < dpToPx(70) && maxInward >= dpToPx(40)) {
+            // 1 & 2: Half-Circles (arc ending significantly above or below start.y along the edge)
+            if (abs(end.y - start.y) >= dpToPx(55)) {
+                return if (end.y < start.y) prefs.gestureHalfUpAction else prefs.gestureHalfDownAction
+            }
+            // 5 & 6: Edge Triangles (2 drawn sides returning near start)
             val upReach = start.y - minY
             val downReach = maxY - start.y
             return if (upReach > downReach) prefs.gestureTriUpAction else prefs.gestureTriDownAction
@@ -520,12 +535,7 @@ class FloatingBubbleService : Service() {
             PrefsManager.ACT_CROP_OCR -> captureAndCrop(actionKey) { cropped ->
                 runOcrSmart(cropped) { extracted ->
                     if (extracted.isEmpty()) {
-                        val hint = if (prefs.aiApiKey.isEmpty()) {
-                            "${getString(R.string.ocr_empty)} (للعربية: أضف API Key في محادثة الذكاء الاصطناعي)"
-                        } else {
-                            getString(R.string.ocr_empty)
-                        }
-                        Toast.makeText(this, hint, Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, getString(R.string.translate_offline_note), Toast.LENGTH_LONG).show()
                     } else {
                         prefs.copyTextToSystemClipboard(extracted)
                         Toast.makeText(this, "تم النسخ:\n${extracted.take(90)}", Toast.LENGTH_LONG).show()
@@ -542,6 +552,9 @@ class FloatingBubbleService : Service() {
             }
             PrefsManager.ACT_GOOGLE_TRANSLATE -> captureAndCrop(actionKey) { cropped ->
                 runOcrSmart(cropped) { extracted ->
+                    if (extracted.isEmpty()) {
+                        Toast.makeText(this, getString(R.string.translate_offline_note), Toast.LENGTH_LONG).show()
+                    }
                     val targetUrl = if (extracted.isNotEmpty()) {
                         prefs.copyTextToSystemClipboard(extracted)
                         val encoded = URLEncoder.encode(extracted, "UTF-8")
@@ -560,6 +573,26 @@ class FloatingBubbleService : Service() {
     }
 
     private fun captureAndCrop(pendingActionKey: String, onResult: (Bitmap) -> Unit) {
+        // Primary: Universal cross-app Accessibility Screenshot (Android 11+)
+        val acc = MedTechAccessibilityService.instance
+        if (acc != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            bubbleView?.visibility = View.INVISIBLE
+            handler.postDelayed({
+                acc.captureFullScreen { bmp ->
+                    handler.post {
+                        bubbleView?.visibility = View.VISIBLE
+                        if (bmp != null) {
+                            showCropOverlay(bmp, onResult)
+                        } else {
+                            Toast.makeText(this, "Tap again to capture", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }, 90)
+            return
+        }
+
+        // Fallback: MediaProjection
         if (mediaProjection == null || virtualDisplay == null || imageReader == null) {
             launchActivitySafe(Intent(this, PermissionBridgeActivity::class.java).apply {
                 putExtra(PermissionBridgeActivity.EXTRA_PENDING_ACTION, pendingActionKey)
@@ -639,7 +672,7 @@ class FloatingBubbleService : Service() {
                 val text = result.text.trim()
                 if (text.isNotEmpty()) {
                     onDone(text)
-                } else if (prefs.aiApiKey.isNotEmpty()) {
+                } else if (prefs.aiApiKey.isNotEmpty() && prefs.aiBaseUrl.isNotEmpty() && prefs.aiModel.isNotEmpty()) {
                     runVisionAiOcr(bitmap, onDone)
                 } else {
                     onDone("")
@@ -651,7 +684,7 @@ class FloatingBubbleService : Service() {
                     ModuleInstall.getClient(this).installModules(installReq)
                 } catch (_: Exception) {
                 }
-                if (prefs.aiApiKey.isNotEmpty()) {
+                if (prefs.aiApiKey.isNotEmpty() && prefs.aiBaseUrl.isNotEmpty() && prefs.aiModel.isNotEmpty()) {
                     runVisionAiOcr(bitmap, onDone)
                 } else {
                     onDone("")
@@ -721,67 +754,93 @@ class FloatingBubbleService : Service() {
         }
     }
 
+    private fun getGestureHintForAction(actionKey: String): String {
+        val tags = mutableListOf<String>()
+        if (prefs.singleTapAction == actionKey) tags.add(getString(R.string.single_tap))
+        if (prefs.doubleTapAction == actionKey) tags.add(getString(R.string.double_tap))
+        if (prefs.longPressAction == actionKey) tags.add(getString(R.string.long_press))
+        if (prefs.swipeGesturesEnabled) {
+            if (prefs.gestureHalfUpAction == actionKey) tags.add(getString(R.string.gesture_half_up))
+            if (prefs.gestureHalfDownAction == actionKey) tags.add(getString(R.string.gesture_half_down))
+            if (prefs.gestureLUpAction == actionKey) tags.add(getString(R.string.gesture_l_up))
+            if (prefs.gestureLDownAction == actionKey) tags.add(getString(R.string.gesture_l_down))
+            if (prefs.gestureTriUpAction == actionKey) tags.add(getString(R.string.gesture_tri_up))
+            if (prefs.gestureTriDownAction == actionKey) tags.add(getString(R.string.gesture_tri_down))
+            if (prefs.gestureCircleCwAction == actionKey) tags.add(getString(R.string.gesture_circle_cw))
+            if (prefs.gestureCircleCcwAction == actionKey) tags.add(getString(R.string.gesture_circle_ccw))
+        }
+        return tags.joinToString(" • ")
+    }
+
+    private fun getActionLabel(key: String): String = when (key) {
+        PrefsManager.ACT_CROP_COPY -> getString(R.string.tool_crop_copy)
+        PrefsManager.ACT_CROP_OCR -> getString(R.string.tool_ocr)
+        PrefsManager.ACT_PIN_IMAGE -> getString(R.string.tool_pin)
+        PrefsManager.ACT_CLIPBOARD -> getString(R.string.tool_clipboard)
+        PrefsManager.ACT_GOOGLE_SEARCH -> getString(R.string.tool_google_search)
+        PrefsManager.ACT_GOOGLE_TRANSLATE -> getString(R.string.tool_google_translate)
+        PrefsManager.ACT_AI_CHAT -> getString(R.string.tool_ai_chat)
+        PrefsManager.ACT_EXIT -> getString(R.string.tool_exit)
+        else -> key
+    }
+
     private fun showToolsMenu() {
         dismissMenu()
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
+            setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(14))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FAFFFFFF"))
+                setColor(UiTheme.card(this@FloatingBubbleService))
                 cornerRadius = dpToPx(18).toFloat()
-                setStroke(dpToPx(2), UiTheme.GOLD_SOFT)
+                setStroke(dpToPx(2), UiTheme.goldSoft())
             }
         }
 
         val title = TextView(this).apply {
             text = "${getString(R.string.app_name)} • ${getString(R.string.app_tagline)}"
-            setTextColor(UiTheme.ROYAL_BLUE)
+            setTextColor(UiTheme.royalBlue())
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, dpToPx(8))
         }
         container.addView(title)
 
-        val orderedMenuKeys = listOf(
-            PrefsManager.ACT_CROP_COPY to getString(R.string.tool_crop_copy),
-            PrefsManager.ACT_CROP_OCR to getString(R.string.tool_ocr),
-            PrefsManager.ACT_PIN_IMAGE to getString(R.string.tool_pin),
-            PrefsManager.ACT_CLIPBOARD to getString(R.string.tool_clipboard),
-            PrefsManager.ACT_GOOGLE_SEARCH to getString(R.string.tool_google_search),
-            PrefsManager.ACT_GOOGLE_TRANSLATE to getString(R.string.tool_google_translate),
-            PrefsManager.ACT_AI_CHAT to getString(R.string.tool_ai_chat),
-            PrefsManager.ACT_EXIT to getString(R.string.tool_exit)
-        )
-
-        for ((key, label) in orderedMenuKeys) {
+        for (key in prefs.menuOrder) {
             if (!prefs.isToolEnabled(key)) continue
-            val btn = TextView(this).apply {
-                text = "• $label"
-                setTextColor(if (key == PrefsManager.ACT_EXIT) UiTheme.DANGER_SOFT else UiTheme.TEXT_PRIMARY)
-                textSize = 14.5f
-                setTypeface(null, if (key == PrefsManager.ACT_EXIT) Typeface.BOLD else Typeface.NORMAL)
-                setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10))
+            val label = getActionLabel(key)
+            val gestureHint = getGestureHintForAction(key)
+
+            val itemLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dpToPx(8), dpToPx(7), dpToPx(8), dpToPx(7))
                 setOnClickListener {
                     dismissMenu()
                     executeAction(key)
                 }
             }
-            container.addView(btn)
-        }
 
-        val closeBtn = TextView(this).apply {
-            text = "✕"
-            setTextColor(UiTheme.ROYAL_BLUE)
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setPadding(0, dpToPx(8), 0, 0)
-            setOnClickListener { dismissMenu() }
+            itemLayout.addView(TextView(this).apply {
+                text = "• $label"
+                setTextColor(if (key == PrefsManager.ACT_EXIT) UiTheme.dangerSoft() else UiTheme.textPrimary(this@FloatingBubbleService))
+                textSize = 14.5f
+                setTypeface(null, if (key == PrefsManager.ACT_EXIT) Typeface.BOLD else Typeface.NORMAL)
+            })
+
+            if (gestureHint.isNotEmpty()) {
+                itemLayout.addView(TextView(this).apply {
+                    text = gestureHint
+                    setTextColor(UiTheme.textMuted(this@FloatingBubbleService))
+                    textSize = 11.5f
+                    setPadding(dpToPx(12), dpToPx(1), 0, 0)
+                })
+            }
+
+            container.addView(itemLayout)
         }
-        container.addView(closeBtn)
 
         menuView = container
         val params = WindowManager.LayoutParams(
-            dpToPx(270),
+            dpToPx(280),
             WindowManager.LayoutParams.WRAP_CONTENT,
             getOverlayWindowType(),
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
@@ -804,7 +863,7 @@ class FloatingBubbleService : Service() {
         pinnedView?.let { if (it.isAttachedToWindow) windowManager.removeView(it) }
 
         val frame = FrameLayout(this).apply {
-            setBackgroundColor(UiTheme.GOLD_SOFT)
+            setBackgroundColor(UiTheme.goldSoft())
             setPadding(5, 5, 5, 5)
         }
         val iv = ImageView(this).apply {
@@ -814,7 +873,7 @@ class FloatingBubbleService : Service() {
         val close = TextView(this).apply {
             text = "✕"
             setTextColor(Color.WHITE)
-            setBackgroundColor(UiTheme.DANGER_SOFT)
+            setBackgroundColor(UiTheme.dangerSoft())
             setPadding(18, 8, 18, 8)
             setOnClickListener {
                 if (frame.isAttachedToWindow) windowManager.removeView(frame)
@@ -875,15 +934,15 @@ class FloatingBubbleService : Service() {
             orientation = LinearLayout.VERTICAL
             setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#FAFFFFFF"))
+                setColor(UiTheme.card(this@FloatingBubbleService))
                 cornerRadius = dpToPx(18).toFloat()
-                setStroke(dpToPx(2), UiTheme.GOLD_SOFT)
+                setStroke(dpToPx(2), UiTheme.goldSoft())
             }
         }
 
         val header = TextView(this).apply {
             text = getString(R.string.tool_clipboard)
-            setTextColor(UiTheme.ROYAL_BLUE)
+            setTextColor(UiTheme.royalBlue())
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, dpToPx(10))
@@ -910,7 +969,7 @@ class FloatingBubbleService : Service() {
             val btnCopy = Button(this).apply {
                 text = "Copy"
                 setTextColor(Color.WHITE)
-                setBackgroundColor(UiTheme.ROYAL_BLUE)
+                setBackgroundColor(UiTheme.royalBlue())
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                     marginStart = dpToPx(10)
                 }
@@ -928,8 +987,8 @@ class FloatingBubbleService : Service() {
 
         val closeBtn = Button(this).apply {
             text = "✕"
-            setTextColor(UiTheme.ROYAL_BLUE)
-            setBackgroundColor(UiTheme.SURFACE_TINT)
+            setTextColor(UiTheme.royalBlue())
+            setBackgroundColor(UiTheme.surface(this@FloatingBubbleService))
             setOnClickListener {
                 clipboardDialogView?.let { if (it.isAttachedToWindow) windowManager.removeView(it) }
                 clipboardDialogView = null
@@ -1006,16 +1065,16 @@ class FloatingBubbleService : Service() {
     private fun createDefaultMedTechBubble(size: Int): Bitmap {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = UiTheme.ROYAL_BLUE }
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = UiTheme.royalBlue() }
         c.drawCircle(size / 2f, size / 2f, size / 2f, p)
         val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = UiTheme.GOLD_SOFT
+            color = UiTheme.goldSoft()
             style = Paint.Style.STROKE
             strokeWidth = size * 0.07f
         }
         c.drawCircle(size / 2f, size / 2f, size * 0.45f, ring)
         val cross = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = UiTheme.GOLD_PALE
+            color = Color.WHITE
             strokeWidth = size * 0.11f
             strokeCap = Paint.Cap.ROUND
         }
